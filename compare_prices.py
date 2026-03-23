@@ -3,87 +3,108 @@ import glob
 import os
 import re
 from thefuzz import fuzz
+from sentence_transformers import SentenceTransformer, util
+
+# Load a lightweight AI model for Semantic Meaning
+# This model understands that "Essential" vs "MK3" are different tiers
+print("🤖 Loading AI Semantic Model... Please wait.")
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def get_latest_file(pattern):
-    """Finds the most recently created file matching the pattern"""
     files = glob.glob(pattern)
     return max(files, key=os.path.getctime) if files else None
 
-def extract_model(name):
-    """Extracts potential model numbers (combinations of letters and numbers)"""
-    # Looks for words containing digits (e.g., SM7B, F310, C40)
-    parts = re.findall(r'\b[A-Z0-9-]{2,}\b', name.upper())
-    return set(parts)
+def extract_strict_tokens(name):
+    """Extracts model numbers and numeric codes (e.g., 825, ME2, TD-3)"""
+    return set(re.findall(r'\b\w*\d\w*\b', name.upper()))
 
-def run_strict_comparison():
-    print("🎯 Starting Strict Comparison (Model-Check Logic)...")
+def is_valid_match(name1, name2, price1, price2, semantic_score):
+    n1, n2 = name1.upper(), name2.upper()
+    
+    # 1. PRICE FILTER (35% margin)
+    try:
+        p1, p2 = float(price1), float(price2)
+        if max(p1, p2) > 0 and abs(p1 - p2) / max(p1, p2) > 0.35:
+            return False
+    except:
+        return False
+
+    # 2. SEMANTIC THRESHOLD (The AI Check)
+    # If AI thinks they are contextually different, reject them
+    if semantic_score < 0.70:
+        return False
+
+    # 3. STRICT MODEL CHECK
+    tokens1 = extract_strict_tokens(n1)
+    tokens2 = extract_strict_tokens(n2)
+    if tokens1 and tokens2 and not (tokens1 & tokens2):
+        return False
+
+    # 4. KEYWORD BLACKLIST (Crucial for tiers)
+    blacklist = ['ESSENTIAL', 'SET', 'KIT', 'BUNDLE', 'MO', 'PRO', 'LAVALIER', 'VOCAL']
+    for word in blacklist:
+        if (word in n1 and word not in n2) or (word in n2 and word not in n1):
+            return False
+
+    return True
+
+def run_ai_comparison():
+    print("🚀 Starting AI-Powered Market Analysis...")
 
     gv_file = get_latest_file("geovoice_full_inventory.csv")
     ac_file = get_latest_file("acoustic_inventory_*.xlsx")
 
     if not gv_file or not ac_file:
-        print("❌ Files not found!")
+        print("❌ Error: Files not found!")
         return
 
-    # Reading the data
     df_gv = pd.read_csv(gv_file)
     df_ac = pd.read_excel(ac_file)
+    ac_list = df_ac.to_dict('records')
+
+    # Pre-calculate Embeddings for Acoustic names to save time
+    print("⏳ Analyzing Acoustic.ge inventory semantics...")
+    ac_names = [str(item['Name']) for item in ac_list]
+    ac_embeddings = model.encode(ac_names, convert_to_tensor=True)
 
     matched_data = []
-    
-    # Prepare Acoustic data (Indexing by first character for optimization)
-    ac_list = []
-    for _, row in df_ac.iterrows():
-        name = str(row['Name']).strip()
-        ac_list.append({
-            'name': name,
-            'first_char': name[0].upper() if name else "",
-            'model_parts': extract_model(name),
-            'data': row
-        })
 
-    print(f"⏳ Checking {len(df_gv)} items...")
+    print(f"🔬 Cross-referencing {len(df_gv)} items with AI Semantic Logic...")
 
-    for _, gv_row in df_gv.iterrows():
+    for i, gv_row in df_gv.iterrows():
         gv_name = str(gv_row['Name']).strip()
-        gv_models = extract_model(gv_name)
-        gv_first_char = gv_name[0].upper() if gv_name else ""
+        gv_price = gv_row['Price (₾)']
+        
+        # Calculate AI similarity for the current GV item against ALL AC items at once
+        gv_embedding = model.encode(gv_name, convert_to_tensor=True)
+        cos_scores = util.cos_sim(gv_embedding, ac_embeddings)[0]
 
-        for ac_item in ac_list:
-            # 1. Optimization: First character must match
-            if gv_first_char != ac_item['first_char']:
-                continue
+        for idx, ac_item in enumerate(ac_list):
+            semantic_score = cos_scores[idx].item()
+            ac_name = str(ac_item['Name']).strip()
             
-            # 2. Critical Check: If model numbers (e.g., SM7B) don't match, skip
-            if gv_models and ac_item['model_parts']:
-                if not (gv_models & ac_item['model_parts']): # Intersection check
-                    continue
+            # If AI similarity is high, run our strict logical filters
+            if semantic_score >= 0.75: 
+                if is_valid_match(gv_name, ac_name, gv_price, ac_item['Price (₾)'], semantic_score):
+                    matched_data.append({
+                        'AI Confidence %': round(semantic_score * 100, 1),
+                        'Name (Geovoice)': gv_name,
+                        'Name (Acoustic)': ac_name,
+                        'Price GV': gv_price,
+                        'Price AC': ac_item['Price (₾)'],
+                        'Diff': round(float(gv_price) - float(ac_item['Price (₾)']), 2),
+                        'Link GV': gv_row['Link'],
+                        'Link AC': ac_item['Link']
+                    })
 
-            # 3. Fuzzy Comparison (Only for items that passed the model check)
-            score = fuzz.token_set_ratio(gv_name, ac_item['name'])
-            
-            # 🎯 Matching threshold set to 90
-            if score >= 90:
-                matched_data.append({
-                    'Confidence %': score,
-                    'Name (Geovoice)': gv_name,
-                    'Name (Acoustic)': ac_item['name'],
-                    'Price GV': gv_row['Price (₾)'],
-                    'Price AC': ac_item['data']['Price (₾)'],
-                    'Diff': float(gv_row['Price (₾)']) - float(ac_item['data']['Price (₾)']),
-                    'Link GV': gv_row['Link'],
-                    'Link AC': ac_item['data']['Link']
-                })
-
-    # Saving Results
     if matched_data:
         final_df = pd.DataFrame(matched_data).drop_duplicates(subset=['Name (Geovoice)', 'Name (Acoustic)'])
-        final_df = final_df.sort_values(by='Confidence %', ascending=False)
-        output = f"STRICT_REPORT_{pd.Timestamp.now().strftime('%H%M')}.xlsx"
+        final_df = final_df.sort_values(by='AI Confidence %', ascending=False)
+        output = f"AI_MARKET_REPORT_{pd.Timestamp.now().strftime('%H%M')}.xlsx"
         final_df.to_excel(output, index=False)
-        print(f"✅ Success! Found {len(final_df)} exact matches. File saved as: {output}")
+        print(f"✅ Success! Found {len(final_df)} AI-verified matches.")
     else:
-        print("⚠️ No common items were found.")
+        print("⚠️ No reliable matches found.")
 
 if __name__ == "__main__":
-    run_strict_comparison()
+    run_ai_comparison()
