@@ -17,7 +17,6 @@ import re
 from collections.abc import Sequence
 from distutils._log import log
 
-from ..ccompiler import CCompiler, CompileError, LinkError, new_compiler
 from ..core import Command
 from ..errors import DistutilsExecError
 from ..sysconfig import customize_compiler
@@ -89,8 +88,14 @@ class config(Command):
         """Check that 'self.compiler' really is a CCompiler object;
         if not, make it one.
         """
+        # We do this late, and only on-demand, because this is an expensive
+        # import.
+        from ..ccompiler import CCompiler, new_compiler
+
         if not isinstance(self.compiler, CCompiler):
-            self.compiler = new_compiler(compiler=self.compiler, force=True)
+            self.compiler = new_compiler(
+                compiler=self.compiler, dry_run=self.dry_run, force=True
+            )
             customize_compiler(self.compiler)
             if self.include_dirs:
                 self.compiler.set_include_dirs(self.include_dirs)
@@ -155,6 +160,14 @@ class config(Command):
             except OSError:
                 pass
 
+    # XXX these ignore the dry-run flag: what to do, what to do? even if
+    # you want a dry-run build, you still need some sort of configuration
+    # info.  My inclination is to make it up to the real config command to
+    # consult 'dry_run', and assume a default (minimal) configuration if
+    # true.  The problem with trying to do it here is that you'd have to
+    # return either true or false from all the 'try' methods, neither of
+    # which is correct.
+
     # XXX need access to the header search path and maybe default macros.
 
     def try_cpp(self, body=None, headers=None, include_dirs=None, lang="c"):
@@ -164,6 +177,8 @@ class config(Command):
         preprocessor succeeded, false if there were any errors.
         ('body' probably isn't of much use, but what the heck.)
         """
+        from ..ccompiler import CompileError
+
         self._check_compiler()
         ok = True
         try:
@@ -198,6 +213,8 @@ class config(Command):
         """Try to compile a source file built from 'body' and 'headers'.
         Return true on success, false otherwise.
         """
+        from ..ccompiler import CompileError
+
         self._check_compiler()
         try:
             self._compile(body, headers, include_dirs, lang)
@@ -222,6 +239,8 @@ class config(Command):
         'headers', to executable form.  Return true on success, false
         otherwise.
         """
+        from ..ccompiler import CompileError, LinkError
+
         self._check_compiler()
         try:
             self._link(body, headers, include_dirs, libraries, library_dirs, lang)
@@ -246,6 +265,8 @@ class config(Command):
         built from 'body' and 'headers'.  Return true on success, false
         otherwise.
         """
+        from ..ccompiler import CompileError, LinkError
+
         self._check_compiler()
         try:
             src, obj, exe = self._link(

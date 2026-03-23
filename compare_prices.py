@@ -1,110 +1,109 @@
 import pandas as pd
-import glob
 import os
 import re
-from thefuzz import fuzz
-from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Load a lightweight AI model for Semantic Meaning
-# This model understands that "Essential" vs "MK3" are different tiers
-print("🤖 Loading AI Semantic Model... Please wait.")
-model = SentenceTransformer('all-MiniLM-L6-v2')
+def find_file(keyword):
+    """ Automatically finds geovoice or acoustic files """
+    files = [f for f in os.listdir('.') if keyword.lower() in f.lower() and (f.endswith('.csv') or f.endswith('.xlsx'))]
+    if not files: return None
+    latest = max(files, key=os.path.getctime)
+    print(f"--- Loading: {latest} ---")
+    if latest.endswith('.csv'):
+        return pd.read_csv(latest)
+    return pd.read_excel(latest)
 
-def get_latest_file(pattern):
-    files = glob.glob(pattern)
-    return max(files, key=os.path.getctime) if files else None
+def clean_name(text):
+    """ Cleans product names for better ML matching """
+    t = str(text).lower()
+    t = re.sub(r'[ა-ჰ]', '', t) # Remove Georgian letters
+    t = re.sub(r'[^a-z0-9 ]', ' ', t) # Keep only alphanumeric
+    return " ".join(t.split())
 
-def extract_strict_tokens(name):
-    """Extracts model numbers and numeric codes (e.g., 825, ME2, TD-3)"""
-    return set(re.findall(r'\b\w*\d\w*\b', name.upper()))
-
-def is_valid_match(name1, name2, price1, price2, semantic_score):
-    n1, n2 = name1.upper(), name2.upper()
+def main():
+    print("--- Starting ML Price Comparison (Feedback Mode) ---")
     
-    # 1. PRICE FILTER (35% margin)
-    try:
-        p1, p2 = float(price1), float(price2)
-        if max(p1, p2) > 0 and abs(p1 - p2) / max(p1, p2) > 0.35:
-            return False
-    except:
-        return False
+    df_gv = find_file("geovoice")
+    df_ac = find_file("acoustic")
+    
+    report_file = 'FINAL_ML_MATCHES.xlsx'
+    wrong_pairs = set()
 
-    # 2. SEMANTIC THRESHOLD (The AI Check)
-    # If AI thinks they are contextually different, reject them
-    if semantic_score < 0.70:
-        return False
+    # STEP 1: Learn from previous mistakes if the file exists
+    if os.path.exists(report_file):
+        try:
+            old_df = pd.read_excel(report_file)
+            if 'Comment' in old_df.columns:
+                # Find rows where user wrote 'WRONG'
+                wrongs = old_df[old_df['Comment'].astype(str).str.upper() == 'WRONG']
+                for _, row in wrongs.iterrows():
+                    wrong_pairs.add((row['Name_GV'], row['Name_AC']))
+                if len(wrong_pairs) > 0:
+                    print(f"--- Successfully learned to avoid {len(wrong_pairs)} wrong matches ---")
+        except Exception as e:
+            print(f"Note: Could not read previous report for learning: {e}")
 
-    # 3. STRICT MODEL CHECK
-    tokens1 = extract_strict_tokens(n1)
-    tokens2 = extract_strict_tokens(n2)
-    if tokens1 and tokens2 and not (tokens1 & tokens2):
-        return False
-
-    # 4. KEYWORD BLACKLIST (Crucial for tiers)
-    blacklist = ['ESSENTIAL', 'SET', 'KIT', 'BUNDLE', 'MO', 'PRO', 'LAVALIER', 'VOCAL']
-    for word in blacklist:
-        if (word in n1 and word not in n2) or (word in n2 and word not in n1):
-            return False
-
-    return True
-
-def run_ai_comparison():
-    print("🚀 Starting AI-Powered Market Analysis...")
-
-    gv_file = get_latest_file("geovoice_full_inventory.csv")
-    ac_file = get_latest_file("acoustic_inventory_*.xlsx")
-
-    if not gv_file or not ac_file:
-        print("❌ Error: Files not found!")
+    if df_gv is None or df_ac is None:
+        print("Error: Base inventory files not found!")
         return
 
-    df_gv = pd.read_csv(gv_file)
-    df_ac = pd.read_excel(ac_file)
-    ac_list = df_ac.to_dict('records')
+    # STEP 2: Prepare names for ML
+    gv_list = df_gv['Name'].apply(clean_name).tolist()
+    ac_list = df_ac['Name'].apply(clean_name).tolist()
 
-    # Pre-calculate Embeddings for Acoustic names to save time
-    print("⏳ Analyzing Acoustic.ge inventory semantics...")
-    ac_names = [str(item['Name']) for item in ac_list]
-    ac_embeddings = model.encode(ac_names, convert_to_tensor=True)
+    # STEP 3: ML Vectorization (TF-IDF)
+    # Using 1-4 n-grams to capture model numbers perfectly
+    vectorizer = TfidfVectorizer(ngram_range=(1, 4), analyzer='char_wb')
+    vectorizer.fit(gv_list + ac_list)
+    
+    gv_matrix = vectorizer.transform(gv_list)
+    ac_matrix = vectorizer.transform(ac_list)
 
-    matched_data = []
+    # STEP 4: Calculate Cosine Similarity
+    similarities = cosine_similarity(gv_matrix, ac_matrix)
+    
+    results = []
+    threshold = 0.60 # Lower threshold to find MORE than 71 items
 
-    print(f"🔬 Cross-referencing {len(df_gv)} items with AI Semantic Logic...")
-
-    for i, gv_row in df_gv.iterrows():
-        gv_name = str(gv_row['Name']).strip()
-        gv_price = gv_row['Price (₾)']
+    for i, row in enumerate(similarities):
+        best_match_idx = row.argmax()
+        score = row[best_match_idx]
         
-        # Calculate AI similarity for the current GV item against ALL AC items at once
-        gv_embedding = model.encode(gv_name, convert_to_tensor=True)
-        cos_scores = util.cos_sim(gv_embedding, ac_embeddings)[0]
+        gv_name = df_gv.iloc[i]['Name']
+        ac_name = df_ac.iloc[best_match_idx]['Name']
 
-        for idx, ac_item in enumerate(ac_list):
-            semantic_score = cos_scores[idx].item()
-            ac_name = str(ac_item['Name']).strip()
+        # Skip if this pair was previously marked as WRONG
+        if (gv_name, ac_name) in wrong_pairs:
+            continue
+
+        if score >= threshold:
+            # Basic Brand Check (First word) to prevent cross-brand errors
+            gv_brand = str(gv_name).split()[0].upper()
+            ac_brand = str(ac_name).split()[0].upper()
             
-            # If AI similarity is high, run our strict logical filters
-            if semantic_score >= 0.75: 
-                if is_valid_match(gv_name, ac_name, gv_price, ac_item['Price (₾)'], semantic_score):
-                    matched_data.append({
-                        'AI Confidence %': round(semantic_score * 100, 1),
-                        'Name (Geovoice)': gv_name,
-                        'Name (Acoustic)': ac_name,
-                        'Price GV': gv_price,
-                        'Price AC': ac_item['Price (₾)'],
-                        'Diff': round(float(gv_price) - float(ac_item['Price (₾)']), 2),
-                        'Link GV': gv_row['Link'],
-                        'Link AC': ac_item['Link']
-                    })
+            if gv_brand == ac_brand:
+                results.append({
+                    'Brand': gv_brand,
+                    'Name_GV': gv_name,
+                    'Name_AC': ac_name,
+                    'Similarity': round(score, 2),
+                    'Price_GV': df_gv.iloc[i].get('Price (₾)', 0),
+                    'Price_AC': df_ac.iloc[best_match_idx].get('Price (₾)', 0),
+                    'Diff': df_gv.iloc[i].get('Price (₾)', 0) - df_ac.iloc[best_match_idx].get('Price (₾)', 0),
+                    'Comment': '', # User can type WRONG here
+                    'Link_GV': df_gv.iloc[i].get('Link', ''),
+                    'Link_AC': df_ac.iloc[best_match_idx].get('Link', '')
+                })
 
-    if matched_data:
-        final_df = pd.DataFrame(matched_data).drop_duplicates(subset=['Name (Geovoice)', 'Name (Acoustic)'])
-        final_df = final_df.sort_values(by='AI Confidence %', ascending=False)
-        output = f"AI_MARKET_REPORT_{pd.Timestamp.now().strftime('%H%M')}.xlsx"
-        final_df.to_excel(output, index=False)
-        print(f"✅ Success! Found {len(final_df)} AI-verified matches.")
+    if results:
+        final_df = pd.DataFrame(results).drop_duplicates(subset=['Link_GV', 'Link_AC'])
+        final_df = final_df.sort_values(by='Similarity', ascending=False)
+        final_df.to_excel(report_file, index=False)
+        print(f"\nCOMPLETED! Found {len(final_df)} items.")
+        print(f"Open '{report_file}', mark errors as 'WRONG' in Comment column, and run again to improve.")
     else:
-        print("⚠️ No reliable matches found.")
+        print("No matches found. Try lowering threshold in code.")
 
 if __name__ == "__main__":
-    run_ai_comparison()
+    main()

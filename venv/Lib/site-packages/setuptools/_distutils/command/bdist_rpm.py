@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 from distutils._log import log
-from typing import ClassVar
 
 from ..core import Command
 from ..debug import DEBUG
@@ -137,7 +136,7 @@ class bdist_rpm(Command):
         ('quiet', 'q', "Run the INSTALL phase of RPM building in quiet mode"),
     ]
 
-    boolean_options: ClassVar[list[str]] = [
+    boolean_options = [
         'keep-temp',
         'use-rpm-opt-flags',
         'rpm3-mode',
@@ -145,7 +144,7 @@ class bdist_rpm(Command):
         'quiet',
     ]
 
-    negative_opt: ClassVar[dict[str, str]] = {
+    negative_opt = {
         'no-keep-temp': 'keep-temp',
         'no-rpm-opt-flags': 'use-rpm-opt-flags',
         'rpm2-mode': 'rpm3-mode',
@@ -196,7 +195,7 @@ class bdist_rpm(Command):
         self.force_arch = None
         self.quiet = False
 
-    def finalize_options(self) -> None:
+    def finalize_options(self):
         self.set_undefined_options('bdist', ('bdist_base', 'bdist_base'))
         if self.rpm_base is None:
             if not self.rpm3_mode:
@@ -229,7 +228,7 @@ class bdist_rpm(Command):
         self.set_undefined_options('bdist', ('dist_dir', 'dist_dir'))
         self.finalize_package_data()
 
-    def finalize_package_data(self) -> None:
+    def finalize_package_data(self):
         self.ensure_string('group', "Development/Libraries")
         self.ensure_string(
             'vendor',
@@ -275,7 +274,7 @@ class bdist_rpm(Command):
 
         self.ensure_string('force_arch')
 
-    def run(self) -> None:  # noqa: C901
+    def run(self):  # noqa: C901
         if DEBUG:
             print("before _get_package_data():")
             print("vendor =", self.vendor)
@@ -378,29 +377,30 @@ class bdist_rpm(Command):
 
         self.spawn(rpm_cmd)
 
-        if self.distribution.has_ext_modules():
-            pyversion = get_python_version()
-        else:
-            pyversion = 'any'
+        if not self.dry_run:
+            if self.distribution.has_ext_modules():
+                pyversion = get_python_version()
+            else:
+                pyversion = 'any'
 
-        if not self.binary_only:
-            srpm = os.path.join(rpm_dir['SRPMS'], source_rpm)
-            assert os.path.exists(srpm)
-            self.move_file(srpm, self.dist_dir)
-            filename = os.path.join(self.dist_dir, source_rpm)
-            self.distribution.dist_files.append(('bdist_rpm', pyversion, filename))
+            if not self.binary_only:
+                srpm = os.path.join(rpm_dir['SRPMS'], source_rpm)
+                assert os.path.exists(srpm)
+                self.move_file(srpm, self.dist_dir)
+                filename = os.path.join(self.dist_dir, source_rpm)
+                self.distribution.dist_files.append(('bdist_rpm', pyversion, filename))
 
-        if not self.source_only:
-            for rpm in binary_rpms:
-                rpm = os.path.join(rpm_dir['RPMS'], rpm)
-                if os.path.exists(rpm):
-                    self.move_file(rpm, self.dist_dir)
-                    filename = os.path.join(self.dist_dir, os.path.basename(rpm))
-                    self.distribution.dist_files.append((
-                        'bdist_rpm',
-                        pyversion,
-                        filename,
-                    ))
+            if not self.source_only:
+                for rpm in binary_rpms:
+                    rpm = os.path.join(rpm_dir['RPMS'], rpm)
+                    if os.path.exists(rpm):
+                        self.move_file(rpm, self.dist_dir)
+                        filename = os.path.join(self.dist_dir, os.path.basename(rpm))
+                        self.distribution.dist_files.append((
+                            'bdist_rpm',
+                            pyversion,
+                            filename,
+                        ))
 
     def _dist_path(self, path):
         return os.path.join(self.dist_dir, os.path.basename(path))
