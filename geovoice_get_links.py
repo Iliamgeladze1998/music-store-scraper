@@ -3,12 +3,12 @@ from playwright.async_api import async_playwright
 
 async def get_geovoice_all_pages():
     async with async_playwright() as p:
-        # headless=False რომ დაინახო როგორ მუშაობს
+        # headless=False allows you to watch the process in real-time
         browser = await p.chromium.launch(headless=False)
         context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = await context.new_page()
 
-        # ძირითადი კატეგორიები
+        # Main category URLs to scan
         categories = [
             "https://geovoice.ge/audio/",
             "https://geovoice.ge/dj-studia/",
@@ -21,52 +21,52 @@ async def get_geovoice_all_pages():
         all_final_pages = []
 
         for cat_url in categories:
-            print(f"📂 ვამუშავებ კატეგორიას: {cat_url}")
+            print(f"📂 Processing category: {cat_url}")
             try:
-                # გადავდივართ კატეგორიის მთავარ გვერდზე
+                # Navigate to the main category page
                 await page.goto(cat_url, timeout=60000, wait_until="domcontentloaded")
                 await asyncio.sleep(2)
             except Exception as e:
-                print(f"⚠️ ვერ შევედი ლინკზე {cat_url}: {e}")
+                print(f"⚠️ Could not access URL {cat_url}: {e}")
                 continue
             
             page_num = 1
             while True:
-                # მიმდინარე გვერდის შენახვა
+                # Store the current page URL
                 current_url = page.url
                 if current_url not in all_final_pages:
                     all_final_pages.append(current_url)
-                    print(f"   ✅ დამატებულია: {current_url}")
+                    print(f"   ✅ Added: {current_url}")
 
-                # ვეძებთ "Next" ღილაკს
+                # Locate the "Next" pagination button
                 next_button = await page.query_selector('.ty-pagination__next')
                 
                 if next_button:
                     try:
-                        print(f"   ➡️ გადავდივარ მე-{page_num + 1} გვერდზე...")
+                        print(f"   ➡️ Navigating to page {page_num + 1}...")
                         await next_button.click()
                         
-                        # 🎯 აქ არის მთავარი ცვლილება: აღარ ველოდებით networkidle-ს
+                        # Wait for the DOM to load instead of waiting for full network idle
                         await page.wait_for_load_state("domcontentloaded", timeout=30000)
-                        await asyncio.sleep(2) # მცირე პაუზა სტაბილურობისთვის
+                        await asyncio.sleep(2) # Short pause for stability
                         page_num += 1
                     except Exception as e:
-                        print(f"   ⚠️ გვერდზე გადასვლა ვერ მოხერხდა: {e}")
+                        print(f"   ⚠️ Navigation failed: {e}")
                         break
                 else:
-                    print("   🏁 ამ კატეგორიაში გვერდები დასრულდა.")
+                    print("   🏁 Reached the end of this category.")
                     break
 
-        # ყველა ლინკის შენახვა ფაილში
+        # Save all collected links to a text file
         if all_final_pages:
             with open('all_pages_to_scrape.txt', 'w', encoding='utf-8') as f:
                 for url in all_final_pages:
                     f.write(f"{url}\n")
             
-            print(f"\n🚀 მზად არის! სულ შეგროვდა {len(all_final_pages)} გვერდი.")
-            print(f"📂 ფაილი: all_pages_to_scrape.txt")
+            print(f"\n🚀 Done! Collected a total of {len(all_final_pages)} pages.")
+            print(f"📂 File saved: all_pages_to_scrape.txt")
         else:
-            print("\n❌ მონაცემები ვერ შეგროვდა.")
+            print("\n❌ No data was collected.")
 
         await browser.close()
 

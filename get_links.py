@@ -3,43 +3,42 @@ from playwright.sync_api import sync_playwright
 
 def get_all_subcategory_links():
     with sync_playwright() as p:
-        # headless=False რომ დაინახო რას აკეთებს
+        # headless=False so you can see the menu navigation in real-time
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = context.new_page()
         
-        print("საიტზე შესვლა...")
+        print("🚀 Navigating to site...")
         page.goto("https://acoustic.ge", wait_until="networkidle")
         
-        # ვპოულობთ ყველა მთავარ კატეგორიას
-        # ვიყენებთ უფრო ზუსტ სელექტორს, რომ მხოლოდ ზედა მენიუ ავიღოთ
+        # Locate all main categories using the menu item selector
         main_categories = page.query_selector_all(".ty-menu__item-link")
         
         all_links = []
         processed_titles = set()
         
-        print(f"ნაპოვნია მენიუს {len(main_categories)} ელემენტი. ვიწყებ ფილტრაციას...")
+        print(f"📦 Found {len(main_categories)} menu items. Starting filtration...")
 
         for category in main_categories:
-            # 1. ვამოწმებთ არის თუ არა ხილვადი
+            # 1. Check if the category is visible
             if not category.is_visible():
                 continue
                 
             cat_name = category.inner_text().strip()
             
-            # 2. ვამოწმებთ სახელს და დუბლიკატს
+            # 2. Check name validity and avoid duplicates
             if not cat_name or cat_name in processed_titles:
                 continue
                 
             processed_titles.add(cat_name)
-            print(f"ვამუშავებ კატეგორიას: {cat_name}")
+            print(f"🔄 Processing category: {cat_name}")
 
             try:
-                # მაუსის მიტანა
+                # Hover over the category to trigger the dropdown menu
                 category.hover()
-                time.sleep(1.5) # ცოტა მეტი დრო მივცეთ მენიუს გამოსაჩენად
+                time.sleep(1.5) # Allow time for the submenu to appear
                 
-                # ვიღებთ მხოლოდ იმ ქველინკებს, რომლებიც ამ წამს გამოჩნდა
+                # Extract sub-links that become visible upon hover
                 sub_links = page.query_selector_all(".ty-menu__submenu-link")
                 
                 current_cat_links = 0
@@ -50,18 +49,18 @@ def get_all_subcategory_links():
                             all_links.append(href)
                             current_cat_links += 1
                 
-                print(f"  -- დამატებულია {current_cat_links} ქვეკატეგორია")
+                print(f"   -- Added {current_cat_links} subcategories")
                 
             except Exception as e:
-                print(f"  -- შეცდომა {cat_name}-ზე: {e}")
+                print(f"   -- Error processing {cat_name}: {e}")
 
-        # ფაილში შენახვა
+        # Save all unique links to a text file
         with open("subcategory_links.txt", "w", encoding="utf-8") as f:
             for link in all_links:
                 f.write(link + "\n")
                 
-        print(f"\nწარმატება! სულ შეგროვდა {len(all_links)} ლინკი.")
-        print("ნახე ფაილი: subcategory_links.txt")
+        print(f"\n✅ Success! Total of {len(all_links)} links collected.")
+        print("📂 Check the file: subcategory_links.txt")
         
         browser.close()
 

@@ -6,35 +6,35 @@ from playwright.async_api import async_playwright
 
 async def scrape_products():
     async with async_playwright() as p:
-        # headless=True ნიშნავს, რომ ბრაუზერის ფანჯარა არ გამოჩნდება (უფრო სწრაფია)
+        # headless=True means the browser window will not appear (faster performance)
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
         try:
             with open('all_pages_to_scrape.txt', 'r', encoding='utf-8') as f:
-                # აქ მოვხსენი [:1], ახლა წაიკითხავს აბსოლუტურად ყველა ლინკს
+                # Reading all URLs from the text file
                 urls = [line.strip() for line in f.readlines() if line.strip()]
             
             if not urls:
-                print("⚠️ ფაილი 'all_pages_to_scrape.txt' ცარიელია!")
+                print("⚠️ Warning: 'all_pages_to_scrape.txt' is empty!")
                 return
-            print(f"📂 სულ დასამუშავებელია {len(urls)} გვერდი.")
+            print(f"📂 Total pages to process: {len(urls)}")
         except FileNotFoundError:
-            print("❌ შეცდომა: all_pages_to_scrape.txt ვერ მოიძებნა.")
+            print("❌ Error: all_pages_to_scrape.txt not found.")
             return
 
         all_products = []
         start_time = datetime.now()
 
-        print(f"🚀 სკანირება დაიწყო {start_time.strftime('%H:%M:%S')}-ზე...")
+        print(f"🚀 Scanning started at {start_time.strftime('%H:%M:%S')}...")
 
         for index, url in enumerate(urls, 1):
             try:
-                # ტერმინალში გამოვიტანოთ პროგრესი, რომ არ მოგვეწყინოს ლოდინისას
-                print(f"🔄 მუშავდება ({index}/{len(urls)}): {url}")
+                # Displaying progress in the terminal
+                print(f"🔄 Processing ({index}/{len(urls)}): {url}")
                 
                 await page.goto(url, timeout=60000)
-                # ველოდებით პროდუქტების კონტეინერს
+                # Waiting for the product container to load
                 await page.wait_for_selector('.ut2-gl__body', timeout=7000)
                 items = await page.query_selector_all('.ut2-gl__body') 
 
@@ -47,7 +47,7 @@ async def scrape_products():
                         name = (await name_elem.inner_text()).strip()
                         raw_price = (await price_elem.inner_text()).strip()
                         
-                        # ფასის გასუფთავება (მხოლოდ ციფრები)
+                        # Price cleaning (extracting digits only)
                         try:
                             clean_price = int(''.join(filter(str.isdigit, raw_price)))
                         except:
@@ -55,12 +55,13 @@ async def scrape_products():
                             
                         link = await name_elem.get_attribute('href')
                         
-                        # ID-ის ამოღება
+                        # Extracting Product ID
                         price_id_attr = await price_elem.get_attribute('id')
                         product_id = re.findall(r'\d+', price_id_attr)[0] if price_id_attr else "N/A"
                         
-                        # მარაგის სტატუსი
+                        # Stock status detection
                         stock_text = (await stock_elem.inner_text()).lower() if stock_elem else ""
+                        # Detection remains based on the Georgian site text, but the result is English
                         status = "In Stock" if "მარაგშია" in stock_text else "Out of Stock"
 
                         all_products.append({
@@ -72,26 +73,27 @@ async def scrape_products():
                             'Last Check': datetime.now().strftime('%Y-%m-%d %H:%M')
                         })
                 
-                # ყოველ 10 გვერდზე ერთხელ შევინახოთ შუალედური შედეგი (დაზღვევისთვის)
+                # Intermediate save every 10 pages for safety
                 if index % 10 == 0:
                     pd.DataFrame(all_products).to_csv('geovoice_full_inventory.csv', index=False, encoding='utf-8-sig')
 
             except Exception as e:
-                print(f"⚠️ გვერდი {url} გამოტოვებულია: {e}")
+                print(f"⚠️ Page {url} skipped due to error: {e}")
                 continue 
 
-        # საბოლოო შენახვა და რეპორტი
+        # Final save and summary report
         if all_products:
             df = pd.DataFrame(all_products)
+            # Remove duplicates based on Product ID
             df.drop_duplicates(subset=['Product ID'], inplace=True)
-            df.to_csv('geovoice_full_inventory.csv', index=False, encoding='utf-8-sig')
+            df.to_csv('geovoice_full_inventory.csv', index=False, encoding='utf-16')
             
             duration = datetime.now() - start_time
             print("\n" + "="*40)
-            print(f"✅ სკანირება დასრულდა!")
-            print(f"📦 სულ შეგროვდა: {len(df)} პროდუქტი")
-            print(f"⏱️ დახარჯული დრო: {duration.seconds // 60} წუთი")
-            print(f"📁 ფაილი: geovoice_full_inventory.csv")
+            print(f"✅ Scanning Completed!")
+            print(f"📦 Total unique products collected: {len(df)}")
+            print(f"⏱️ Time elapsed: {duration.seconds // 60} minutes")
+            print(f"📁 File saved as: geovoice_full_inventory.csv")
             print("="*40)
         
         await browser.close()
