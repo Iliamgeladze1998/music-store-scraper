@@ -50,7 +50,6 @@ def upload_to_google_sheets(file_path):
         
         # --- აი აქ ვამატებთ დროის ჩაწერას ---
         try:
-            from datetime import datetime
             tbilisi_tz = pytz.timezone('Asia/Tbilisi')
             last_updated = datetime.now(tbilisi_tz).strftime('%Y-%m-%d %H:%M:%S')
             
