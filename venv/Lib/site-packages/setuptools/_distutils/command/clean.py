@@ -6,7 +6,6 @@ Implements the Distutils 'clean' command."""
 
 import os
 from distutils._log import log
-from typing import ClassVar
 
 from ..core import Command
 from ..dir_util import remove_tree
@@ -31,7 +30,7 @@ class clean(Command):
         ('all', 'a', "remove all build output, not just temporary by-products"),
     ]
 
-    boolean_options: ClassVar[list[str]] = ['all']
+    boolean_options = ['all']
 
     def initialize_options(self):
         self.build_base = None
@@ -55,7 +54,7 @@ class clean(Command):
         # remove the build/temp.<plat> directory (unless it's already
         # gone)
         if os.path.exists(self.build_temp):
-            remove_tree(self.build_temp)
+            remove_tree(self.build_temp, dry_run=self.dry_run)
         else:
             log.debug("'%s' does not exist -- can't clean it", self.build_temp)
 
@@ -63,14 +62,15 @@ class clean(Command):
             # remove build directories
             for directory in (self.build_lib, self.bdist_base, self.build_scripts):
                 if os.path.exists(directory):
-                    remove_tree(directory)
+                    remove_tree(directory, dry_run=self.dry_run)
                 else:
                     log.warning("'%s' does not exist -- can't clean it", directory)
 
         # just for the heck of it, try to remove the base build directory:
         # we might have emptied it right now, but if not we don't care
-        try:
-            os.rmdir(self.build_base)
-            log.info("removing '%s'", self.build_base)
-        except OSError:
-            pass
+        if not self.dry_run:
+            try:
+                os.rmdir(self.build_base)
+                log.info("removing '%s'", self.build_base)
+            except OSError:
+                pass

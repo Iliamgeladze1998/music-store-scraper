@@ -1,68 +1,65 @@
 import subprocess
-import sys
 import time
+import sys
+import os
 from datetime import datetime
 
-def run_step(script_name, is_git=False):
-    """Executes a python script or a Git command"""
-    print(f"\n{'='*50}")
-    print(f"🚀 {'Git Operation' if is_git else 'Process Started'}: {script_name}")
-    print(f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}")
-    print(f"{'='*50}\n")
+def run_script(script_name):
+    """ გაშვება და შეცდომების კონტროლი """
+    print(f"\n" + "="*60)
+    print(f"🚀 EXECUTING: {script_name}")
+    print("="*60)
     
     try:
-        if is_git:
-            # Using shell=True for Git commands
-            process = subprocess.run(script_name, shell=True, check=True)
-        else:
-            # Executing Python scripts
-            process = subprocess.run([sys.executable, script_name], check=True)
-        
+        # sys.executable იყენებს შენს venv-ს
+        subprocess.run([sys.executable, script_name], check=True)
+        print(f"\n✅ {script_name} DONE")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Error occurred in {script_name}!")
+        print(f"\n❌ ERROR in {script_name}: {e}")
         return False
 
 def main():
-    start_all = time.time()
-    
-    # 📝 1. Scanning and Comparison steps
-    scripts = [
-        "get_links.py",          # Acoustic Links Collector
-        "geovoice_get_links.py",  # Geovoice Links Collector
-        "scraper.py",            # Acoustic Scraper
-        "crawler.py",            # Geovoice Scraper
-        "compare_prices.py"      # Price Comparison Engine
-    ]
-    
-    for script in scripts:
-        if not run_step(script):
-            print(f"🛑 Execution halted due to error in: {script}")
-            sys.exit(1)
+    start_time = datetime.now()
+    print(f"🔔 Full Market Update Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # 📝 2. Automatic GitHub Upload
-    print("\n☁️ Starting automated GitHub upload...")
-    
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-    git_commands = [
-        "git add .",
-        f'git commit -m "Auto-update: Market Analysis {timestamp}"',
-        "git push origin main"
-    ]
+    # --- ნაბიჯი 1: ლინკების განახლება ---
+    # Acoustic-ის მენიუს სკანირება
+    if not run_script("get_links.py"): return
 
-    for cmd in git_commands:
-        if not run_step(cmd, is_git=True):
-            print("⚠️ GitHub upload failed, but local scripts completed successfully.")
-            break
+    # Geovoice-ის პაგინაციის სკანირება
+    if not run_script("geovoice_get_links.py"): return
 
-    end_all = time.time()
-    duration = round((end_all - start_all) / 60, 1)
+    # --- ნაბიჯი 2: სრული სკრაპინგი (UNIQUE_ID-ებით) ---
+    # Acoustic-ის ყველა პროდუქტი
+    if not run_script("scraper.py"): return
+
+    # Geovoice-ის ყველა პროდუქტი (ყველაზე ხანგრძლივი ნაწილი)
+    if not run_script("crawler.py"): return
+
+    # --- ნაბიჯი 3: მონაცემთა შედარება ---
+    print("\n⚖️ Generating Comparison Report...")
+    if not run_script("compare_prices.py"): return
+
+    # --- ნაბიჯი 4: Git Automation (თუ გჭირდება GitHub-ზე ატვირთვა) ---
+    """
+    print("\n📦 Pushing updates to GitHub...")
+    try:
+        subprocess.run(["git", "add", "."], check=True)
+        subprocess.run(["git", "commit", "-m", f"Auto-update: {datetime.now().strftime('%Y-%m-%d')}"], check=True)
+        subprocess.run(["git", "push"], check=True)
+        print("✅ GitHub update complete!")
+    except Exception as e:
+        print(f"⚠️ Git push failed: {e}")
+    """
+
+    end_time = datetime.now()
+    duration = end_time - start_time
     
-    print(f"\n{'⭐'*20}")
-    print(f"🎉 Everything is ready!")
-    print(f"⏱️ Total duration: {duration} minutes")
-    print(f"🔗 View on GitHub: https://github.com/iliamgeladze1998/music-store-scraper")
-    print(f"{'⭐'*20}")
+    print(f"\n" + "🏆"*20)
+    print(f"FINISHED SUCCESSFULLY!")
+    print(f"Total processing time: {duration}")
+    print("🏆"*20)
 
 if __name__ == "__main__":
     main()

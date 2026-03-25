@@ -31,7 +31,7 @@ Note: The master_app.py is configured to automatically Commit and Push the lates
 🧰 Tech Stack
 Python 3.x
 
-Playwright (Web Automation & Scraping)
+Selenium (Web Automation & Scraping)
 
 Pandas (Data Manipulation)
 
