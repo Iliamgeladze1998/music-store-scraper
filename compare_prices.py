@@ -1,109 +1,86 @@
 import pandas as pd
 import os
+import glob
 import re
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from datetime import datetime
 
-def find_file(keyword):
-    """ Automatically finds geovoice or acoustic files """
-    files = [f for f in os.listdir('.') if keyword.lower() in f.lower() and (f.endswith('.csv') or f.endswith('.xlsx'))]
-    if not files: return None
-    latest = max(files, key=os.path.getctime)
-    print(f"--- Loading: {latest} ---")
-    if latest.endswith('.csv'):
-        return pd.read_csv(latest)
-    return pd.read_excel(latest)
-
-def clean_name(text):
-    """ Cleans product names for better ML matching """
-    t = str(text).lower()
-    t = re.sub(r'[ა-ჰ]', '', t) # Remove Georgian letters
-    t = re.sub(r'[^a-z0-9 ]', ' ', t) # Keep only alphanumeric
-    return " ".join(t.split())
-
-def main():
-    print("--- Starting ML Price Comparison (Feedback Mode) ---")
+def find_latest_file(keyword):
+    """ Finds the most recent file, ignoring temporary Excel files (~$) """
+    # ვეძებთ ფაილებს, რომლებიც შეიცავენ სახელს და არ იწყებიან ~$ სიმბოლოებით
+    files = [f for f in glob.glob(f"*{keyword}*.[cx][ls]*") if not f.startswith("~$")]
     
-    df_gv = find_file("geovoice")
-    df_ac = find_file("acoustic")
+    if not files:
+        return None
     
-    report_file = 'FINAL_ML_MATCHES.xlsx'
-    wrong_pairs = set()
+    latest_file = max(files, key=os.path.getctime)
+    print(f"--- Loading: {latest_file} ---")
+    
+    if latest_file.endswith('.csv'):
+        return pd.read_csv(latest_file)
+    return pd.read_excel(latest_file)
 
-    # STEP 1: Learn from previous mistakes if the file exists
-    if os.path.exists(report_file):
-        try:
-            old_df = pd.read_excel(report_file)
-            if 'Comment' in old_df.columns:
-                # Find rows where user wrote 'WRONG'
-                wrongs = old_df[old_df['Comment'].astype(str).str.upper() == 'WRONG']
-                for _, row in wrongs.iterrows():
-                    wrong_pairs.add((row['Name_GV'], row['Name_AC']))
-                if len(wrong_pairs) > 0:
-                    print(f"--- Successfully learned to avoid {len(wrong_pairs)} wrong matches ---")
-        except Exception as e:
-            print(f"Note: Could not read previous report for learning: {e}")
+def clean_id(sku):
+    """ Removes dashes, dots and spaces for better matching (e.g., 10-1662 -> 101662) """
+    if pd.isna(sku):
+        return ""
+    # ვტოვებთ მხოლოდ ციფრებს და ასოებს
+    return re.sub(r'[^a-zA-Z0-9]', '', str(sku)).strip().upper()
+
+def compare_prices():
+    print("--- Starting Price Comparison (Strict ID Matching) ---")
+
+    # 1. მოვძებნოთ ბოლო ფაილები
+    df_gv = find_latest_file("geovoice")
+    df_ac = find_latest_file("acoustic")
 
     if df_gv is None or df_ac is None:
-        print("Error: Base inventory files not found!")
+        print("❌ Error: Missing inventory files! Make sure scrapers finished correctly.")
         return
 
-    # STEP 2: Prepare names for ML
-    gv_list = df_gv['Name'].apply(clean_name).tolist()
-    ac_list = df_ac['Name'].apply(clean_name).tolist()
+    # 2. მოვამზადოთ ID-ები შესადარებლად (გავასუფთაოთ ტირეებისგან)
+    df_gv['MATCH_ID'] = df_gv['UNIQUE_ID'].apply(clean_id)
+    df_ac['MATCH_ID'] = df_ac['UNIQUE_ID'].apply(clean_id)
 
-    # STEP 3: ML Vectorization (TF-IDF)
-    # Using 1-4 n-grams to capture model numbers perfectly
-    vectorizer = TfidfVectorizer(ngram_range=(1, 4), analyzer='char_wb')
-    vectorizer.fit(gv_list + ac_list)
+    # 3. შევაერთოთ ცხრილები (მხოლოდ ის პროდუქტები, რაც ორივეშია)
+    merged_df = pd.merge(
+        df_ac, 
+        df_gv, 
+        on='MATCH_ID', 
+        suffixes=('_AC', '_GV')
+    )
+
+    if merged_df.empty:
+        print("⚠️ No matching products found between the two stores.")
+        return
+
+    # 4. ფასების ფორმატირება და სხვაობის დათვლა
+    merged_df['PRICE_AC'] = pd.to_numeric(merged_df['PRICE_AC'], errors='coerce').fillna(0)
+    merged_df['PRICE_GV'] = pd.to_numeric(merged_df['PRICE_GV'], errors='coerce').fillna(0)
+    merged_df['Price_Diff'] = merged_df['PRICE_AC'] - merged_df['PRICE_GV']
+
+    # 5. რეპორტის სვეტების დალაგება
+    final_report = merged_df[[
+        'UNIQUE_ID_AC',
+        'NAME_AC',
+        'PRICE_AC',
+        'STATUS_AC',
+        'NAME_GV',
+        'PRICE_GV',
+        'STATUS_GV',
+        'Price_Diff',
+        'LINK_AC',
+        'LINK_GV'
+    ]].rename(columns={'UNIQUE_ID_AC': 'UNIQUE_ID'})
+
+    # 6. შენახვა
+    timestamp = datetime.now().strftime("%m%d_%H%M")
+    output_name = f"FINAL_MATCH_REPORT_{timestamp}.xlsx"
     
-    gv_matrix = vectorizer.transform(gv_list)
-    ac_matrix = vectorizer.transform(ac_list)
-
-    # STEP 4: Calculate Cosine Similarity
-    similarities = cosine_similarity(gv_matrix, ac_matrix)
+    final_report.to_excel(output_name, index=False)
     
-    results = []
-    threshold = 0.60 # Lower threshold to find MORE than 71 items
-
-    for i, row in enumerate(similarities):
-        best_match_idx = row.argmax()
-        score = row[best_match_idx]
-        
-        gv_name = df_gv.iloc[i]['Name']
-        ac_name = df_ac.iloc[best_match_idx]['Name']
-
-        # Skip if this pair was previously marked as WRONG
-        if (gv_name, ac_name) in wrong_pairs:
-            continue
-
-        if score >= threshold:
-            # Basic Brand Check (First word) to prevent cross-brand errors
-            gv_brand = str(gv_name).split()[0].upper()
-            ac_brand = str(ac_name).split()[0].upper()
-            
-            if gv_brand == ac_brand:
-                results.append({
-                    'Brand': gv_brand,
-                    'Name_GV': gv_name,
-                    'Name_AC': ac_name,
-                    'Similarity': round(score, 2),
-                    'Price_GV': df_gv.iloc[i].get('Price (₾)', 0),
-                    'Price_AC': df_ac.iloc[best_match_idx].get('Price (₾)', 0),
-                    'Diff': df_gv.iloc[i].get('Price (₾)', 0) - df_ac.iloc[best_match_idx].get('Price (₾)', 0),
-                    'Comment': '', # User can type WRONG here
-                    'Link_GV': df_gv.iloc[i].get('Link', ''),
-                    'Link_AC': df_ac.iloc[best_match_idx].get('Link', '')
-                })
-
-    if results:
-        final_df = pd.DataFrame(results).drop_duplicates(subset=['Link_GV', 'Link_AC'])
-        final_df = final_df.sort_values(by='Similarity', ascending=False)
-        final_df.to_excel(report_file, index=False)
-        print(f"\nCOMPLETED! Found {len(final_df)} items.")
-        print(f"Open '{report_file}', mark errors as 'WRONG' in Comment column, and run again to improve.")
-    else:
-        print("No matches found. Try lowering threshold in code.")
+    print(f"\n✅ SUCCESS!")
+    print(f"📦 Matching products found: {len(final_report)}")
+    print(f"📁 Report saved as: {output_name}")
 
 if __name__ == "__main__":
-    main()
+    compare_prices()
