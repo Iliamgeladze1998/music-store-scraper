@@ -1,31 +1,19 @@
-name: Music Store Price Tracker
-
-on:
-  schedule:
-    - cron: '0 13 * * *'
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Install dependencies
+- name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas openpyxl requests beautifulsoup4 gspread oauth2client playwright pytz
           playwright install chromium
+          playwright install-deps chromium  # <-- ეს დაამატე, რომ Linux-ს ბრაუზერისთვის საჭირო ბიბლიოთეკები ჰქონდეს
 
       - name: Create credentials.json from Secret
         run: |
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
 
       - name: Run Scraper
-        run: python master_app.py
+        env:
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}  # <-- დარწმუნდი, რომ ეს გაქვს Secrets-ში მეილისთვის
+        run: |
+          # ძალდატანებით გადავაკეთოთ False -> True, თუ შემთხვევით ისევ გაიპარა კოდში
+          sed -i 's/headless=False/headless=True/g' get_links.py
+          sed -i 's/headless=False/headless=True/g' geovoice_get_links.py
+          python master_app.py
