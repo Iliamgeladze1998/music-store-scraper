@@ -31,7 +31,11 @@ jobs:
       - name: Run Scraper
         env:
           MAIL_PASS: ${{ secrets.MAIL_PASS }}
+          PYTHONUNBUFFERED: "1"
         run: |
+          # უსაფრთხოების ჩანაცვლება
           sed -i 's/headless=False/headless=True/g' get_links.py
           sed -i 's/headless=False/headless=True/g' geovoice_get_links.py
+          
+          # გაშვება
           python master_app.py
