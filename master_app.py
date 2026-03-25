@@ -5,9 +5,9 @@ import os
 import smtplib
 import logging
 import glob
-import gspread # <--- დავამატეთ
-import pandas as pd # <--- დავამატეთ
-from oauth2client.service_account import ServiceAccountCredentials # <--- დავამატეთ
+import gspread 
+import pandas as pd 
+from oauth2client.service_account import ServiceAccountCredentials 
 from email.message import EmailMessage
 from datetime import datetime
 
@@ -22,29 +22,26 @@ logging.basicConfig(
 )
 
 # Configuration
-SENDER_EMAIL = "iliamgeladze399@hotmail.com" # შენი Hotmail
-RECIPIENT_EMAIL = "client-email@example.com" # დამკვეთის მეილი
+SENDER_EMAIL = "iliamgeladze399@hotmail.com" 
+RECIPIENT_EMAIL = "client-email@example.com" 
 EMAIL_PASSWORD = os.getenv('MAIL_PASS') 
-SPREADSHEET_ID = "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94" # შენი ცხრილის ID
+SPREADSHEET_ID = "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94" 
 
 def upload_to_google_sheets(file_path):
     """ატვირთავს რეპორტს პირდაპირ Google Sheets-ში."""
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
     try:
-        # იყენებს credentials.json ფაილს, რომელიც პაპკაში უნდა გქონდეს
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-        # ვკითხულობთ Excel/CSV ფაილს (თუ .xlsx-ია, გამოიყენე pd.read_excel)
         if file_path.endswith('.xlsx'):
             df = pd.read_excel(file_path)
         else:
             df = pd.read_csv(file_path)
 
         sheet.clear()
-        # მონაცემების მომზადება და ატვირთვა
         data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(data_to_upload)
         
@@ -75,7 +72,6 @@ def send_email_report(file_path):
                 filename=os.path.basename(file_path)
             )
 
-        # Hotmail/Outlook SMTP პარამეტრები
         with smtplib.SMTP("smtp.office365.com", 587) as smtp:
             smtp.starttls()
             smtp.login(SENDER_EMAIL, EMAIL_PASSWORD)
@@ -93,9 +89,11 @@ def validate_report(file_path):
     return True
 
 def run_script(script_name):
+    """Executes sub-scripts and allows them to open browser windows."""
     logging.info(f"EXECUTING: {script_name}")
     try:
-        result = subprocess.run([sys.executable, script_name], check=True, capture_output=True, text=True)
+        # მოვაშორეთ capture_output, რომ Playwright-ის ბრაუზერი გამოჩნდეს
+        result = subprocess.run([sys.executable, script_name], check=True)
         logging.info(f"SUCCESS: {script_name} finished.")
         return True
     except subprocess.CalledProcessError as e:
@@ -119,9 +117,7 @@ def main():
     if report_files:
         latest_report = max(report_files, key=os.path.getctime)
         if validate_report(latest_report):
-            # 1. ჯერ ვაახლებთ ონლაინ ცხრილს
             upload_to_google_sheets(latest_report)
-            # 2. მერე ვაგზავნით მეილს (სარეზერვოდ)
             send_email_report(latest_report)
     else:
         logging.error("No report files found for delivery.")
