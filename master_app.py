@@ -5,6 +5,7 @@ import os
 import smtplib
 import logging
 import glob
+import pytz
 import gspread 
 import pandas as pd 
 from oauth2client.service_account import ServiceAccountCredentials 
@@ -28,7 +29,7 @@ EMAIL_PASSWORD = os.getenv('MAIL_PASS')
 SPREADSHEET_ID = "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94" 
 
 def upload_to_google_sheets(file_path):
-    """ატვირთავს რეპორტს პირდაპირ Google Sheets-ში."""
+    """ატვირთავს რეპორტს პირდაპირ Google Sheets-ში და წერს განახლების დროს."""
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
     try:
@@ -42,9 +43,26 @@ def upload_to_google_sheets(file_path):
             df = pd.read_csv(file_path)
 
         sheet.clear()
+        
+        # მონაცემების მომზადება და ატვირთვა
         data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(data_to_upload)
         
+        # --- აი აქ ვამატებთ დროის ჩაწერას ---
+        try:
+            from datetime import datetime
+            import pytz
+            tbilisi_tz = pytz.timezone('Asia/Tbilisi')
+            last_updated = datetime.now(tbilisi_tz).strftime('%Y-%m-%d %H:%M:%S')
+            
+            # ჩაწერს Z1 უჯრაში, რომ მონაცემებს ხელი არ შეუშალოს
+            # თუ გინდა სხვაგან იყოს, შეცვალე 'Z1'
+            sheet.update_acell('Z1', f"ბოლო განახლება: {last_updated}")
+            logging.info(f"🕒 Timestamp added: {last_updated}")
+        except Exception as timestamp_error:
+            logging.warning(f"⚠️ Could not add timestamp: {timestamp_error}")
+        # ----------------------------------
+
         logging.info("✅ Google Sheet successfully updated!")
         return True
     except Exception as e:
