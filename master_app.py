@@ -2,64 +2,132 @@ import subprocess
 import time
 import sys
 import os
+import smtplib
+import logging
+import glob
+import gspread # <--- დავამატეთ
+import pandas as pd # <--- დავამატეთ
+from oauth2client.service_account import ServiceAccountCredentials # <--- დავამატეთ
+from email.message import EmailMessage
 from datetime import datetime
 
-def run_script(script_name):
-    """ გაშვება და შეცდომების კონტროლი """
-    print(f"\n" + "="*60)
-    print(f"🚀 EXECUTING: {script_name}")
-    print("="*60)
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("automation.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Configuration
+SENDER_EMAIL = "iliamgeladze399@hotmail.com" # შენი Hotmail
+RECIPIENT_EMAIL = "client-email@example.com" # დამკვეთის მეილი
+EMAIL_PASSWORD = os.getenv('MAIL_PASS') 
+SPREADSHEET_ID = "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94" # შენი ცხრილის ID
+
+def upload_to_google_sheets(file_path):
+    """ატვირთავს რეპორტს პირდაპირ Google Sheets-ში."""
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
     try:
-        # sys.executable იყენებს შენს venv-ს
-        subprocess.run([sys.executable, script_name], check=True)
-        print(f"\n✅ {script_name} DONE")
+        # იყენებს credentials.json ფაილს, რომელიც პაპკაში უნდა გქონდეს
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+
+        # ვკითხულობთ Excel/CSV ფაილს (თუ .xlsx-ია, გამოიყენე pd.read_excel)
+        if file_path.endswith('.xlsx'):
+            df = pd.read_excel(file_path)
+        else:
+            df = pd.read_csv(file_path)
+
+        sheet.clear()
+        # მონაცემების მომზადება და ატვირთვა
+        data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
+        sheet.update(data_to_upload)
+        
+        logging.info("✅ Google Sheet successfully updated!")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Failed to update Google Sheet: {e}")
+        return False
+
+def send_email_report(file_path):
+    """Handles the SMTP connection and sends the attachment via Hotmail/Outlook."""
+    if not EMAIL_PASSWORD:
+        logging.error("Email password not found in environment variables (MAIL_PASS).")
+        return False
+
+    msg = EmailMessage()
+    msg['Subject'] = f"Daily Price Report - {datetime.now().strftime('%Y-%m-%d')}"
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = RECIPIENT_EMAIL
+    msg.set_content("The automated price comparison update is complete. The Google Sheet is updated, and the file is attached.")
+
+    try:
+        with open(file_path, 'rb') as f:
+            msg.add_attachment(
+                f.read(),
+                maintype='application',
+                subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                filename=os.path.basename(file_path)
+            )
+
+        # Hotmail/Outlook SMTP პარამეტრები
+        with smtplib.SMTP("smtp.office365.com", 587) as smtp:
+            smtp.starttls()
+            smtp.login(SENDER_EMAIL, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+        logging.info(f"Report successfully emailed to {RECIPIENT_EMAIL}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to send email: {e}")
+        return False
+
+def validate_report(file_path):
+    if not os.path.exists(file_path):
+        logging.error(f"Validation Error: File {file_path} not found.")
+        return False
+    return True
+
+def run_script(script_name):
+    logging.info(f"EXECUTING: {script_name}")
+    try:
+        result = subprocess.run([sys.executable, script_name], check=True, capture_output=True, text=True)
+        logging.info(f"SUCCESS: {script_name} finished.")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ ERROR in {script_name}: {e}")
+        logging.error(f"CRITICAL ERROR in {script_name}")
         return False
 
 def main():
     start_time = datetime.now()
-    print(f"🔔 Full Market Update Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logging.info(f"Market Update Sequence Started: {start_time.strftime('%H:%M:%S')}")
 
-    # --- ნაბიჯი 1: ლინკების განახლება ---
-    # Acoustic-ის მენიუს სკანირება
+    # --- Steps 1-3 (Scraping & Comparison) ---
     if not run_script("get_links.py"): return
-
-    # Geovoice-ის პაგინაციის სკანირება
     if not run_script("geovoice_get_links.py"): return
-
-    # --- ნაბიჯი 2: სრული სკრაპინგი (UNIQUE_ID-ებით) ---
-    # Acoustic-ის ყველა პროდუქტი
     if not run_script("scraper.py"): return
-
-    # Geovoice-ის ყველა პროდუქტი (ყველაზე ხანგრძლივი ნაწილი)
     if not run_script("crawler.py"): return
-
-    # --- ნაბიჯი 3: მონაცემთა შედარება ---
-    print("\n⚖️ Generating Comparison Report...")
     if not run_script("compare_prices.py"): return
 
-    # --- ნაბიჯი 4: Git Automation (თუ გჭირდება GitHub-ზე ატვირთვა) ---
-    """
-    print("\n📦 Pushing updates to GitHub...")
-    try:
-        subprocess.run(["git", "add", "."], check=True)
-        subprocess.run(["git", "commit", "-m", f"Auto-update: {datetime.now().strftime('%Y-%m-%d')}"], check=True)
-        subprocess.run(["git", "push"], check=True)
-        print("✅ GitHub update complete!")
-    except Exception as e:
-        print(f"⚠️ Git push failed: {e}")
-    """
-
-    end_time = datetime.now()
-    duration = end_time - start_time
+    # --- Step 4: Delivery ---
+    report_files = glob.glob("FINAL_MATCH_REPORT_*.xlsx") or glob.glob("STRICT_REPORT_*.xlsx")
     
-    print(f"\n" + "🏆"*20)
-    print(f"FINISHED SUCCESSFULLY!")
-    print(f"Total processing time: {duration}")
-    print("🏆"*20)
+    if report_files:
+        latest_report = max(report_files, key=os.path.getctime)
+        if validate_report(latest_report):
+            # 1. ჯერ ვაახლებთ ონლაინ ცხრილს
+            upload_to_google_sheets(latest_report)
+            # 2. მერე ვაგზავნით მეილს (სარეზერვოდ)
+            send_email_report(latest_report)
+    else:
+        logging.error("No report files found for delivery.")
+
+    duration = datetime.now() - start_time
+    logging.info(f"WORKFLOW FINISHED. Duration: {duration}")
 
 if __name__ == "__main__":
     main()

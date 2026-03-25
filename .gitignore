@@ -4,3 +4,8 @@ venv/
 *.txt
 __pycache__/
 .idea/
+credentials.json
+__pycache__/
+*.log
+*.xlsx
+*.csv
