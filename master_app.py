@@ -51,7 +51,6 @@ def upload_to_google_sheets(file_path):
         # --- აი აქ ვამატებთ დროის ჩაწერას ---
         try:
             from datetime import datetime
-            import pytz
             tbilisi_tz = pytz.timezone('Asia/Tbilisi')
             last_updated = datetime.now(tbilisi_tz).strftime('%Y-%m-%d %H:%M:%S')
             
@@ -119,8 +118,13 @@ def run_script(script_name):
         return False
 
 def main():
-    start_time = datetime.now()
-    logging.info(f"Market Update Sequence Started: {start_time.strftime('%H:%M:%S')}")
+    # 1. განვსაზღვროთ თბილისის დროის სარტყელი
+    tbilisi_tz = pytz.timezone('Asia/Tbilisi')
+    
+    # 2. ავიღოთ მიმდინარე დრო თბილისის დროით
+    start_time = datetime.now(tbilisi_tz)
+    
+    logging.info(f"🚀 Market Update Sequence Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # --- Steps 1-3 (Scraping & Comparison) ---
     if not run_script("get_links.py"): return
@@ -138,10 +142,12 @@ def main():
             upload_to_google_sheets(latest_report)
             send_email_report(latest_report)
     else:
-        logging.error("No report files found for delivery.")
+        logging.error("❌ No report files found for delivery.")
 
-    duration = datetime.now() - start_time
-    logging.info(f"WORKFLOW FINISHED. Duration: {duration}")
+    # 3. დასრულების დროსაც თბილისის დროით ვითვლით
+    end_time = datetime.now(tbilisi_tz)
+    duration = end_time - start_time
+    logging.info(f"✅ WORKFLOW FINISHED AT: {end_time.strftime('%H:%M:%S')}. Duration: {duration}")
 
 if __name__ == "__main__":
     main()
