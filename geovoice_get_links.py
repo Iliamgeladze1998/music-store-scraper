@@ -22,7 +22,7 @@ async def scan_single_category(context, base_url, category_num):
     category_pages = []
     p_num = 1
     
-    print(f"\n🌐 SCANNING CATEGORY {category_num}: {base_url}", flush=True)
+    print(f"\nSCANNING CATEGORY {category_num}: {base_url}", flush=True)
     
     try:
         while True:
@@ -35,10 +35,10 @@ async def scan_single_category(context, base_url, category_num):
                 # გვერდზე გადასვლა
                 response = await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
                 
-                print(f"   📡 Page {p_num} Status: {response.status}", flush=True)
+                print(f"   Page {p_num} Status: {response.status}", flush=True)
 
                 if response.status == 404:
-                    print(f"   🛑 Page {p_num} is 404. Moving to next category.", flush=True)
+                    print(f"   Page {p_num} is 404. Moving to next category.", flush=True)
                     break
 
                 # დალოდება რენდერინგისთვის (original: 2.5s)
@@ -50,22 +50,22 @@ async def scan_single_category(context, base_url, category_num):
                 if len(products) > 0:
                     if target_url not in category_pages:
                         category_pages.append(target_url)
-                    print(f"   ✅ Success: Page {p_num} - Found {len(products)} products", flush=True)
+                    print(f"   Success: Page {p_num} - Found {len(products)} products", flush=True)
                     p_num += 1
                     # პაუზა ბლოკირების თავიდან ასაცილებლად (original: 3s)
                     await asyncio.sleep(3) 
                 else:
-                    print(f"   📭 Page {p_num} is empty. Category ends.", flush=True)
+                    print(f"   Page {p_num} is empty. Category ends.", flush=True)
                     break
 
             except Exception as e:
-                print(f"   ❌ Error at {target_url}: {str(e)[:50]}", flush=True)
+                print(f"   Error at {target_url}: {str(e)[:50]}", flush=True)
                 break
     
     finally:
         await page.close()
     
-    print(f"   ✅ Category {category_num} complete: {len(category_pages)} pages found", flush=True)
+    print(f"   Category {category_num} complete: {len(category_pages)} pages found", flush=True)
     return category_pages
 
 
@@ -79,7 +79,7 @@ async def get_geovoice_all_pages():
     print(f"{'#'*70}\n", flush=True)
     
     async with async_playwright() as p:
-        print("🚀 Launching browser...", flush=True)
+        print("Launching browser...", flush=True)
         browser = await p.chromium.launch(
             headless=True,
             args=[
@@ -88,8 +88,8 @@ async def get_geovoice_all_pages():
                 "--no-sandbox"
             ]
         )
-        print("✅ Browser launched\n", flush=True)
-        
+        print("Browser launched\n", flush=True)
+
         # კონტექსტი ადამიანური პარამეტრებით
         context = await browser.new_context(
             viewport={'width': 1280, 'height': 720},  # Optimized viewport
@@ -109,9 +109,10 @@ async def get_geovoice_all_pages():
             "https://geovoice.ge/sadgamebi-sakidebi-aksesuarebi/",
             "https://geovoice.ge/sadgamebi-sakidebi/" 
         ]
-        
-        print(f"📋 Creating {len(categories)} parallel scanning tasks...", flush=True)
-        print(f"   (Each category gets its own dedicated page)\n", flush=True)
+
+        print(f"Found {len(categories)} categories. Starting extraction...", flush=True)
+        for idx, url in enumerate(categories, 1):
+            print(f"Visiting category {idx}: {url}", flush=True)
 
         # Create tasks for each category - each with its own page
         tasks = []
@@ -120,7 +121,7 @@ async def get_geovoice_all_pages():
             tasks.append(task)
 
         # Run all categories in parallel
-        print(f"⚙️  Starting parallel category scans...\n", flush=True)
+        print(f"Starting parallel category scans...\n", flush=True)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect results from all categories
@@ -128,30 +129,28 @@ async def get_geovoice_all_pages():
         for cat_num, result in enumerate(results, 1):
             if isinstance(result, list):
                 all_final_pages.extend(result)
-                print(f"✓ Category {cat_num}: {len(result)} pages collected", flush=True)
+                print(f"Category {cat_num}: {len(result)} pages collected", flush=True)
             elif isinstance(result, Exception):
-                print(f"✗ Category {cat_num}: ERROR - {str(result)[:40]}", flush=True)
+                print(f"Category {cat_num}: ERROR - {str(result)[:40]}", flush=True)
 
         await context.close()
         await browser.close()
 
-        # --- შედეგების შენახვა და შეჯამება ---
+        # --- Save results and print summary ---
         if all_final_pages:
-            # WRITE mode instead of append
-            with open('all_pages_to_scrape.txt', 'w', encoding='utf-8') as f:
+            # Save to geovoice_subcategory_links.txt for consistency
+            with open('geovoice_subcategory_links.txt', 'w', encoding='utf-8') as f:
                 for url in all_final_pages:
                     f.write(f"{url}\n")
-            
             elapsed = time.time() - start_time
-            
             print(f"\n{'='*70}")
-            print(f"📊 GEOVOICE SCAN SUMMARY:")
-            print(f"✅ Total Geovoice pages found: {len(all_final_pages)}")
-            print(f"📂 Saved to: all_pages_to_scrape.txt")
-            print(f"⏱️  Time: {elapsed:.1f}s ({elapsed/len(categories):.1f}s per category avg)", flush=True)
+            print(f"GEOVOICE SCAN SUMMARY:")
+            print(f"Total Geovoice pages found: {len(all_final_pages)}")
+            print(f"Saved to: geovoice_subcategory_links.txt")
+            print(f"Time: {elapsed:.1f}s ({elapsed/len(categories):.1f}s per category avg)", flush=True)
             print(f"{'='*70}\n", flush=True)
         else:
-            print(f"\n⚠️ No pages were found for Geovoice!", flush=True)
+            print(f"\nNo pages were found for Geovoice!", flush=True)
 
 if __name__ == "__main__":
     asyncio.run(get_geovoice_all_pages())

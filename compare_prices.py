@@ -78,9 +78,9 @@ def compare_prices():
     
     final_report.to_excel(output_name, index=False)
     
-    print(f"\n✅ SUCCESS!")
-    print(f"📦 Matching products found: {len(final_report)}")
-    print(f"📁 Report saved as: {output_name}")
+    print(f"\nSUCCESS!")
+    print(f"Matching products found: {len(final_report)}")
+    print(f"Report saved as: {output_name}")
 
 if __name__ == "__main__":
     compare_prices()

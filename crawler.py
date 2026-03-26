@@ -23,6 +23,8 @@ class GeovoiceScraper(BaseScraper):
             except:
                 pass
             products = await page.query_selector_all(self.selectors['product_container'])
+            valid_id_count = 0
+            missing_id_count = 0
             for product in products:
                 try:
                     name_el = await product.query_selector(self.selectors['name'])
@@ -31,14 +33,22 @@ class GeovoiceScraper(BaseScraper):
                     name = (await name_el.inner_text()).strip()
                     link = await name_el.get_attribute("href")
                     unique_id = "N/A"
+                    original_id = None
                     for selector in self.selectors['sku']:
                         try:
                             sku_el = await product.query_selector(selector)
                             if sku_el:
-                                unique_id = str((await sku_el.inner_text())).strip().upper()
+                                original_id = await sku_el.inner_text()
+                                unique_id = str(original_id).strip().upper()
                                 break
                         except:
                             continue
+                    self.logger.info(f"[DEBUG] Product: '{name}' | Extracted ID: '{original_id}' | URL: {url}")
+                    if not original_id or unique_id == "N/A" or unique_id == "":
+                        missing_id_count += 1
+                        self.logger.warning(f"[WARNING] No ID found for product '{name}' at {url}.")
+                    else:
+                        valid_id_count += 1
                     price_val = "0"
                     try:
                         price_container = await product.query_selector(self.selectors['price'])
@@ -65,7 +75,7 @@ class GeovoiceScraper(BaseScraper):
                     })
                 except Exception as e:
                     self.logger.warning(f"Product parse error: {e}")
-            self.logger.info(f"Found {len(products_data)} products at {url}")
+            self.logger.info(f"[SUMMARY] {url} -> Found {len(products_data)} products. {valid_id_count} have IDs, {missing_id_count} are missing IDs.")
         except asyncio.TimeoutError:
             self.logger.warning(f"Timeout loading {url}")
         except Exception as e:
@@ -75,35 +85,32 @@ class GeovoiceScraper(BaseScraper):
 
 async def scrape_geovoice():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
-    async def scrape_geovoice():
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        file_name = f"geovoice_inventory_{timestamp}.xlsx"
-        try:
-            with open("all_pages_to_scrape.txt", "r", encoding="utf-8") as f:
-                urls = [line.strip() for line in f.readlines() if line.strip()]
-            if not urls:
-                print("❌ Error: all_pages_to_scrape.txt is empty!")
-                return
-            print(f"🚀 Starting scrape: {len(urls)} categories found\n", flush=True)
-        except FileNotFoundError:
-            print("❌ Error: all_pages_to_scrape.txt not found!")
-            import sys
-            sys.exit(1)
-        logger = logging.getLogger("geovoice")
-        scraper = GeovoiceScraper(logger=logger)
-        all_data = []
-        results = await scraper.run(urls, scraper.process_page)
-        for batch in results:
-            if batch:
-                all_data.extend(batch)
-        if all_data:
-            df = pd.DataFrame(all_data)
-            df.drop_duplicates(subset=['UNIQUE_ID'], keep='first', inplace=True)
-            df.to_excel(file_name, index=False)
-            print(f"\n✅ COMPLETE! {len(df)} items scraped and saved to {file_name}")
-        else:
-            print("\n❌ No data collected.", flush=True)
+    file_name = f"geovoice_inventory_{timestamp}.xlsx"
+    try:
+        with open("geovoice_subcategory_links.txt", "r", encoding="utf-8") as f:
+            urls = [line.strip() for line in f.readlines() if line.strip()]
+        if not urls:
+            print("Error: geovoice_subcategory_links.txt is empty!")
+            return
+        print(f"Starting scrape: {len(urls)} categories found\n", flush=True)
+    except FileNotFoundError:
+        print("Error: geovoice_subcategory_links.txt not found!")
+        import sys
+        sys.exit(1)
+    logger = logging.getLogger("geovoice")
+    scraper = GeovoiceScraper(logger=logger)
+    all_data = []
+    results = await scraper.run(urls, scraper.process_page)
+    for batch in results:
+        if batch:
+            all_data.extend(batch)
+    if all_data:
+        df = pd.DataFrame(all_data)
+        df.drop_duplicates(subset=['UNIQUE_ID'], keep='first', inplace=True)
+        df.to_excel(file_name, index=False)
+        print(f"\nCOMPLETE! {len(df)} items scraped and saved to {file_name}")
+    else:
+        print("\nNo data collected.", flush=True)
 
     if __name__ == "__main__":
         asyncio.run(scrape_geovoice())

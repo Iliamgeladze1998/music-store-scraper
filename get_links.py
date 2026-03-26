@@ -8,7 +8,7 @@ def get_all_subcategory_links():
         context = browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = context.new_page()
         
-        print("🚀 Navigating to site...")
+        print("Navigating to site...")
         page.goto("https://acoustic.ge", wait_until="networkidle")
         
         # Locate all main categories using the menu item selector
@@ -17,7 +17,7 @@ def get_all_subcategory_links():
         all_links = []
         processed_titles = set()
         
-        print(f"📦 Found {len(main_categories)} menu items. Starting filtration...")
+        print(f"Found {len(main_categories)} menu items. Starting filtration...")
 
         for category in main_categories:
             # 1. Check if the category is visible
@@ -31,7 +31,7 @@ def get_all_subcategory_links():
                 continue
                 
             processed_titles.add(cat_name)
-            print(f"🔄 Processing category: {cat_name}")
+            print(f"Processing category: {cat_name}")
 
             try:
                 # Hover over the category to trigger the dropdown menu
@@ -59,8 +59,8 @@ def get_all_subcategory_links():
             for link in all_links:
                 f.write(link + "\n")
                 
-        print(f"\n✅ Success! Total of {len(all_links)} links collected.")
-        print("📂 Check the file: subcategory_links.txt")
+        print(f"\nSuccess! Total of {len(all_links)} links collected.")
+        print("Check the file: subcategory_links.txt")
         
         browser.close()
 

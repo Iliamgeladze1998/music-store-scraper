@@ -16,7 +16,7 @@ class AcousticScraper(BaseScraper):
         try:
             response = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             if not response or response.status != 200:
-                self.logger.warning(f"⚠️ HTTP {getattr(response, 'status', 'N/A')} for {url}")
+                self.logger.warning(f"HTTP {getattr(response, 'status', 'N/A')} for {url}")
                 return products_data
             try:
                 await page.wait_for_selector(self.selectors['product_container'], timeout=5000)
@@ -28,6 +28,8 @@ class AcousticScraper(BaseScraper):
             except:
                 pass
             products = await page.query_selector_all(self.selectors['product_container'])
+            valid_id_count = 0
+            missing_id_count = 0
             for product in products:
                 try:
                     name_el = await product.query_selector(self.selectors['name'])
@@ -36,14 +38,22 @@ class AcousticScraper(BaseScraper):
                     name = (await name_el.inner_text()).strip()
                     link = await name_el.get_attribute("href")
                     unique_id = "N/A"
+                    original_id = None
                     for selector in self.selectors['sku']:
                         try:
                             sku_el = await product.query_selector(selector)
                             if sku_el:
-                                unique_id = str((await sku_el.inner_text())).strip().upper()
+                                original_id = await sku_el.inner_text()
+                                unique_id = str(original_id).strip().upper()
                                 break
                         except:
                             continue
+                    self.logger.info(f"[DEBUG] Product: '{name}' | Extracted ID: '{original_id}' | URL: {url}")
+                    if not original_id or unique_id == "N/A" or unique_id == "":
+                        missing_id_count += 1
+                        self.logger.warning(f"[WARNING] No ID found for product '{name}' at {url}.")
+                    else:
+                        valid_id_count += 1
                     price_val = "0"
                     try:
                         price_container = await product.query_selector(self.selectors['price'])
@@ -73,11 +83,11 @@ class AcousticScraper(BaseScraper):
                     })
                 except Exception as e:
                     self.logger.warning(f"Product parse error: {e}")
-            self.logger.info(f"✅ Found {len(products_data)} products at {url}")
+            self.logger.info(f"[SUMMARY] {url} -> Found {len(products_data)} products. {valid_id_count} have IDs, {missing_id_count} are missing IDs.")
         except asyncio.TimeoutError:
-            self.logger.warning(f"⏱️ Timeout loading {url}")
+            self.logger.warning(f"Timeout loading {url}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Error: {str(e)[:40]} at {url}")
+            self.logger.warning(f"Error: {str(e)[:40]} at {url}")
         return products_data
 
 async def scrape_acoustic():
@@ -88,11 +98,11 @@ async def scrape_acoustic():
         with open("subcategory_links.txt", "r", encoding="utf-8") as f:
             urls = [line.strip() for line in f.readlines() if line.strip()]
         if not urls:
-            print("❌ Error: subcategory_links.txt is empty!")
+            print("Error: subcategory_links.txt is empty!")
             return
-        print(f"🚀 Starting scrape: {len(urls)} categories found\n", flush=True)
+        print(f"Starting scrape: {len(urls)} categories found\n", flush=True)
     except FileNotFoundError:
-        print("❌ Error: subcategory_links.txt not found!")
+        print("Error: subcategory_links.txt not found!")
         return
     logger = logging.getLogger("acoustic")
     scraper = AcousticScraper(logger=logger)
@@ -108,13 +118,13 @@ async def scrape_acoustic():
         df.to_excel(file_name, index=False)
         elapsed = (datetime.now() - start_time).total_seconds()
         print(f"\n{'='*50}")
-        print(f"✅ COMPLETE!")
-        print(f"   📊 Total items: {len(df)}")
-        print(f"   ⏱️  Time: {elapsed:.1f}s ({elapsed/len(urls):.1f}s per category)")
-        print(f"   📁 Saved: {file_name}")
+        print(f"COMPLETE!")
+        print(f"   Total items: {len(df)}")
+        print(f"   Time: {elapsed:.1f}s ({elapsed/len(urls):.1f}s per category)")
+        print(f"   Saved: {file_name}")
         print(f"{'='*50}\n", flush=True)
     else:
-        print("\n❌ No data collected.", flush=True)
+        print("\nNo data collected.", flush=True)
 
 if __name__ == "__main__":
     asyncio.run(scrape_acoustic())

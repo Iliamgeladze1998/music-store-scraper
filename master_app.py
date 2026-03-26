@@ -238,7 +238,7 @@ def main():
     cleanup_old_reports(days=CONFIG['ARCHIVE_DAYS'])
     
     # Clean old link files
-    for f in ["subcategory_links.txt", "all_pages_to_scrape.txt"]:
+    for f in ["subcategory_links.txt", "geovoice_subcategory_links.txt"]:
         if os.path.exists(f):
             os.remove(f)
             logger.info(f"Deleted old file: {f}")
