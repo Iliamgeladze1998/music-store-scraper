@@ -1,9 +1,18 @@
+
 name: Music Store Price Tracker
 
 on:
   schedule:
     - cron: '0 13 * * *'
   workflow_dispatch:
+
+  manual_test:
+    description: 'Run a manual test of the full pipeline.'
+    inputs:
+      test_reason:
+        description: 'Reason for manual test (optional)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -40,3 +49,14 @@ jobs:
           
           # მთავარი სკრიპტის გაშვება
           python master_app.py
+        continue-on-error: true
+
+      - name: Upload logs as artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: automation-logs
+          path: |
+            automation.log
+            *.log
+            archive/
