@@ -5,6 +5,55 @@ import re
 from datetime import datetime
 from playwright.async_api import async_playwright
 
+async def extract_unique_id(page):
+    """
+    Extracts UNIQUE_ID with multiple fallback selectors.
+    Returns the ID or "N/A" if not found.
+    """
+    # Add delay to ensure page is fully loaded
+    await page.wait_for_timeout(2000)
+    
+    # Primary selector
+    selectors = [
+        ".ty-control-group__item",      # Current primary selector
+        ".ty-sku-item",                  # First fallback
+        "[id^='sku']",                   # ID-based fallback
+        ".product-sku",                  # Generic product SKU
+        "[data-sku]",                    # Data attribute
+        ".sku-value",                    # Alternative class name
+        ".product-code",                 # Product code fallback
+        "span[class*='sku']",            # Partial class match
+    ]
+    
+    for selector in selectors:
+        try:
+            element = await page.query_selector(selector)
+            if element:
+                text = (await element.inner_text()).strip()
+                if text and text != "N/A":
+                    print(f"         ✅ ID found using selector: {selector}", flush=True)
+                    return text
+        except Exception as e:
+            print(f"         ⚠️ Selector {selector} failed: {str(e)[:30]}", flush=True)
+            continue
+    
+    # If no selector worked, try to extract from page content
+    try:
+        content = await page.content()
+        # Look for SKU/ID patterns in the HTML
+        sku_match = re.search(r'[Ss][Kk][Uu][\s:]*([A-Za-z0-9\-]+)', content)
+        if sku_match:
+            sku_value = sku_match.group(1).strip()
+            if sku_value and sku_value != "N/A":
+                print(f"         ✅ ID found via regex pattern", flush=True)
+                return sku_value
+    except:
+        pass
+    
+    print(f"         ❌ No UNIQUE_ID found with any selector", flush=True)
+    return "N/A"
+
+
 async def scrape_geovoice():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     file_name = f"geovoice_inventory_{timestamp}.xlsx"
@@ -59,17 +108,14 @@ async def scrape_geovoice():
                             if "არ არის" in (await item.inner_text()):
                                 status = "Out of Stock"
 
-                            # --- UNIQUE_ID-ის ამოღება შიდა გვერდიდან (ჩვენი ახალი მეთოდით) ---
+                            # --- UNIQUE_ID-ის ამოღება შიდა გვერდიდან ---
                             unique_id = "N/A"
                             prod_page = await context.new_page()
                             try:
                                 await prod_page.goto(full_link, wait_until="domcontentloaded", timeout=25000)
-                                await asyncio.sleep(2) # ვაცდით დინამიურ ID-ს
-
-                                # ვიყენებთ ტესტზე დადასტურებულ სელექტორს
-                                sku_el = await prod_page.query_selector(".ty-control-group__item")
-                                if sku_el:
-                                    unique_id = (await sku_el.inner_text()).strip()
+                                
+                                # Use helper function with fallback selectors and delay
+                                unique_id = await extract_unique_id(prod_page)
                                 
                                 # დამატებითი შემოწმება სტატუსისთვის (შიდა გვერდი უფრო ზუსტია)
                                 inner_content = await prod_page.content()
@@ -78,7 +124,8 @@ async def scrape_geovoice():
                                 else:
                                     status = "Out of Stock"
                                     
-                            except:
+                            except Exception as e:
+                                print(f"         ❌ Error extracting product data: {str(e)[:50]}", flush=True)
                                 unique_id = "N/A"
                             finally:
                                 await prod_page.close()
@@ -100,7 +147,8 @@ async def scrape_geovoice():
                                 'DATE': datetime.now().strftime('%Y-%m-%d %H:%M')
                             })
 
-                    except Exception:
+                    except Exception as e:
+                        print(f"      ⚠️ Skipping item: {str(e)[:50]}", flush=True)
                         continue
 
                 # შუალედური შენახვა ყოველ 5 კატეგორიაში
@@ -118,8 +166,9 @@ async def scrape_geovoice():
         df.drop_duplicates(subset=['UNIQUE_ID', 'NAME'], keep='first', inplace=True)
         df.to_excel("geovoice_latest_inventory.xlsx", index=False)
         print(f"\n✅ Completed! Collected {len(df)} unique items.")
+        print(f"📁 Saved to: geovoice_latest_inventory.xlsx", flush=True)
     else:
-        print("\n❌ No data collected.")
+        print("\n❌ No data collected.", flush=True)
 
 if __name__ == "__main__":
     asyncio.run(scrape_geovoice())
