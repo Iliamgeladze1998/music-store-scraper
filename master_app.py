@@ -15,6 +15,9 @@ import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 
+from scraper import scrape_acoustic
+from crawler import scrape_geovoice
+
 load_dotenv()
 
 # ==================== LOGGING CONFIGURATION ====================
@@ -242,6 +245,7 @@ def main():
     
     execution_log = {}
     
+
     # Step 1: Link Collection
     logger.info("\n📍 STEP 1: Link Collection")
     execution_log['get_links'] = run_script("get_links.py")
@@ -249,31 +253,34 @@ def main():
         logger.error("❌ Failed to get Acoustic links. Aborting.")
         send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
         return False
-    
+
     execution_log['geovoice_links'] = run_script("geovoice_get_links.py")
     if not execution_log['geovoice_links']:
         logger.error("❌ Failed to get Geovoice links. Aborting.")
         send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Geovoice)")
         return False
-    
-    # Step 2: Data Extraction (Scraping) - Can run in parallel
-    logger.info("\n📍 STEP 2: Data Extraction")
-    import time
-    
-    # Start both scrapers (they'll run sequentially, but structure allows for async in future)
-    execution_log['scraper'] = run_script("scraper.py", max_retries=1)
-    if not execution_log['scraper']:
-        logger.warning("⚠️ Warning: scraper.py failed, but continuing...")
-    
-    execution_log['crawler'] = run_script("crawler.py", max_retries=1)
-    if not execution_log['crawler']:
-        logger.warning("⚠️ Warning: crawler.py failed, but continuing...")
-    
+
+    # Step 2: Data Extraction (Scraping) - Now turbo-optimized and concurrent
+    logger.info("\n📍 STEP 2: Data Extraction (Turbo)")
+    try:
+        asyncio.run(scrape_acoustic())
+        execution_log['scraper'] = True
+    except Exception as e:
+        logger.error(f"❌ Acoustic scrape failed: {e}")
+        execution_log['scraper'] = False
+
+    try:
+        asyncio.run(scrape_geovoice())
+        execution_log['crawler'] = True
+    except Exception as e:
+        logger.error(f"❌ Geovoice scrape failed: {e}")
+        execution_log['crawler'] = False
+
     if not (execution_log['scraper'] or execution_log['crawler']):
         logger.error("❌ Both scrapers failed. No data to compare.")
         send_email_report("", status="failure", error_details="Failed at Step 2: No valid scraping data")
         return False
-    
+
     # Step 3: Price Comparison
     logger.info("\n📍 STEP 3: Price Comparison")
     execution_log['compare'] = run_script("compare_prices.py")
