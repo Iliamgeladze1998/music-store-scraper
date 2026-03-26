@@ -1,4 +1,3 @@
-
 name: Music Store Price Tracker
 
 on:
@@ -46,7 +45,7 @@ jobs:
           
           # მთავარი სკრიპტის გაშვება
           python master_app.py
-        continue-on-error: true
+      [jobs]: # Removing the entire jobs section as part of the workflow deletion
 
       - name: Upload logs as artifact (always)
         if: always()

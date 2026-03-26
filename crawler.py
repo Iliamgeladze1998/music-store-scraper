@@ -58,13 +58,15 @@ async def scrape_geovoice():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     file_name = f"geovoice_inventory_{timestamp}.xlsx"
 
-    if not os.path.exists('all_pages_to_scrape.txt'):
-        print("❌ Error: all_pages_to_scrape.txt not found!", flush=True)
-        return
 
-    with open('all_pages_to_scrape.txt', 'r', encoding='utf-8') as f:
-        urls = [line.strip() for line in f if line.strip()]
-    
+    try:
+        with open('all_pages_to_scrape.txt', 'r', encoding='utf-8') as f:
+            urls = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print("❌ Error: all_pages_to_scrape.txt not found!", flush=True)
+        import sys
+        sys.exit(1)
+
     if not urls:
         print("❌ Error: all_pages_to_scrape.txt is empty!", flush=True)
         return

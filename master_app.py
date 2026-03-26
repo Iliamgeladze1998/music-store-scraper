@@ -1,3 +1,4 @@
+
 import subprocess
 import sys
 import os
@@ -12,6 +13,9 @@ from email.message import EmailMessage
 from datetime import datetime, timedelta
 import asyncio
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ==================== LOGGING CONFIGURATION ====================
 logging.basicConfig(
@@ -26,13 +30,13 @@ logger = logging.getLogger(__name__)
 
 # ==================== CONFIGURATION ====================
 CONFIG = {
-    'SENDER_EMAIL': "iliamgeladze399@hotmail.com",
-    'RECIPIENT_EMAIL': "client-email@example.com",
+    'SENDER_EMAIL': os.getenv('SENDER_EMAIL', "iliamgeladze399@hotmail.com"),
+    'RECIPIENT_EMAIL': os.getenv('RECIPIENT_EMAIL', "client-email@example.com"),
     'EMAIL_PASSWORD': os.getenv('MAIL_PASS'),
-    'SPREADSHEET_ID': "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94",
-    'TIMEZONE': 'Asia/Tbilisi',
-    'MAX_RETRIES': 2,
-    'ARCHIVE_DAYS': 7,  # Archive reports older than 7 days
+    'SPREADSHEET_ID': os.getenv('SPREADSHEET_ID', "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94"),
+    'TIMEZONE': os.getenv('TIMEZONE', 'Asia/Tbilisi'),
+    'MAX_RETRIES': int(os.getenv('MAX_RETRIES', 2)),
+    'ARCHIVE_DAYS': int(os.getenv('ARCHIVE_DAYS', 7)),
     'REQUIRED_FILES': ['credentials.json']
 }
 
@@ -41,20 +45,16 @@ CONFIG = {
 def validate_environment():
     """Check if required files and environment variables exist."""
     missing = []
-    
     # Check required files
     for file in CONFIG['REQUIRED_FILES']:
         if not os.path.exists(file):
             missing.append(f"File: {file}")
-    
     # Check email password (optional but log if missing)
     if not CONFIG['EMAIL_PASSWORD']:
         logger.warning("⚠️ Email password (MAIL_PASS) not set. Email notifications disabled.")
-    
     if missing:
         logger.error(f"❌ Missing required files/configs: {', '.join(missing)}")
         return False
-    
     return True
 
 
@@ -124,9 +124,9 @@ def send_email_report(file_path, status="success", error_details=""):
 
     try:
         logger.info(f"📧 Sending email to {CONFIG['RECIPIENT_EMAIL']}...")
-        
+
         msg = EmailMessage()
-        
+
         if status == "success":
             msg['Subject'] = f"✅ Daily Price Report - {datetime.now().strftime('%Y-%m-%d')}"
             content = "The automated price comparison update is complete. The Google Sheet is updated, and the file is attached."
@@ -153,7 +153,7 @@ def send_email_report(file_path, status="success", error_details=""):
             smtp.starttls()
             smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
             smtp.send_message(msg)
-        
+
         logger.info(f"✅ Email sent successfully")
         return True
     except Exception as e:

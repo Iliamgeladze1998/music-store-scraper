@@ -1,3 +1,10 @@
+# Ignore sensitive and generated files
+.env
+*.xlsx
+*.csv
+*.log
+__pycache__/
+.pytest_cache/
 venv/
 *.xlsx
 *.csv
