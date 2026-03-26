@@ -50,30 +50,40 @@ async def scrape_geovoice():
                             raw_link = await name_el.get_attribute("href")
                             full_link = raw_link if raw_link.startswith('http') else f"https://geovoice.ge{raw_link}"
                             
+                            # PRICE - ვიღებთ მხოლოდ ციფრებს
                             raw_price = (await price_el.inner_text()).strip()
-                            price = "".join(filter(str.isdigit, raw_price))
+                            price = re.sub(r'\D', '', raw_price.split('.')[0])
                             
-                            # სტატუსი ინგლისურად (როგორც Acoustic-ში)
+                            # STATUS
                             status = "In Stock"
                             if "არ არის" in (await item.inner_text()):
                                 status = "Out of Stock"
 
-                            # UNIQUE_ID შიდა გვერდიდან
+                            # --- UNIQUE_ID-ის ამოღება შიდა გვერდიდან (ჩვენი ახალი მეთოდით) ---
                             unique_id = "N/A"
                             prod_page = await context.new_page()
                             try:
                                 await prod_page.goto(full_link, wait_until="domcontentloaded", timeout=25000)
-                                sku_selector = "span[id^='product_code_']"
-                                await prod_page.wait_for_selector(sku_selector, timeout=6000)
-                                sku_el = await prod_page.query_selector(sku_selector)
+                                await asyncio.sleep(2) # ვაცდით დინამიურ ID-ს
+
+                                # ვიყენებთ ტესტზე დადასტურებულ სელექტორს
+                                sku_el = await prod_page.query_selector(".ty-control-group__item")
                                 if sku_el:
                                     unique_id = (await sku_el.inner_text()).strip()
+                                
+                                # დამატებითი შემოწმება სტატუსისთვის (შიდა გვერდი უფრო ზუსტია)
+                                inner_content = await prod_page.content()
+                                if "მარაგშია" in inner_content or "In Stock" in inner_content:
+                                    status = "In Stock"
+                                else:
+                                    status = "Out of Stock"
+                                    
                             except:
                                 unique_id = "N/A"
                             finally:
                                 await prod_page.close()
 
-                            # --- ლოგირება: ზუსტად Acoustic-ის პრინტის სტილი ---
+                            # --- ლოგირება ---
                             print(f"      ---------------------------------------------")
                             print(f"      🆔 UNIQUE_ID: {unique_id}")
                             print(f"      📦 NAME: {name}")
@@ -93,6 +103,7 @@ async def scrape_geovoice():
                     except Exception:
                         continue
 
+                # შუალედური შენახვა ყოველ 5 კატეგორიაში
                 if index % 5 == 0:
                     pd.DataFrame(all_data).to_excel(file_name, index=False)
 
@@ -103,6 +114,7 @@ async def scrape_geovoice():
 
     if all_data:
         df = pd.DataFrame(all_data)
+        # ვშლით დუბლიკატებს ID-ის და სახელის მიხედვით
         df.drop_duplicates(subset=['UNIQUE_ID', 'NAME'], keep='first', inplace=True)
         df.to_excel("geovoice_latest_inventory.xlsx", index=False)
         print(f"\n✅ Completed! Collected {len(df)} unique items.")
