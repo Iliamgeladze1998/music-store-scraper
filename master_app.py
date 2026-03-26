@@ -54,9 +54,9 @@ def validate_environment():
             missing.append(f"File: {file}")
     # Check email password (optional but log if missing)
     if not CONFIG['EMAIL_PASSWORD']:
-        logger.warning("⚠️ Email password (MAIL_PASS) not set. Email notifications disabled.")
+        logger.warning("Email password (MAIL_PASS) not set. Email notifications disabled.")
     if missing:
-        logger.error(f"❌ Missing required files/configs: {', '.join(missing)}")
+        logger.error(f"Missing required files/configs: {', '.join(missing)}")
         return False
     return True
 
@@ -83,18 +83,18 @@ def cleanup_old_reports(days=7):
                     if not archive_path.exists():
                         os.rename(file, archive_path)
                         archived_count += 1
-                        logger.info(f"📦 Archived: {file}")
+                        logger.info(f"Archived: {file}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Could not archive {file}: {e}")
+                    logger.warning(f"Could not archive {file}: {e}")
     
     if archived_count > 0:
-        logger.info(f"📦 Successfully archived {archived_count} old files")
+        logger.info(f"Successfully archived {archived_count} old files")
 
 
 def upload_to_google_sheets(file_path):
     """Upload report to Google Sheets with better error handling."""
     try:
-        logger.info(f"📊 Uploading to Google Sheets: {file_path}")
+        logger.info(f"Uploading to Google Sheets: {file_path}")
         
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
@@ -112,29 +112,29 @@ def upload_to_google_sheets(file_path):
         data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(data_to_upload)
         
-        logger.info(f"✅ Google Sheet updated successfully ({len(df)} rows)")
+        logger.info(f"Google Sheet updated successfully ({len(df)} rows)")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to update Google Sheet: {e}")
+        logger.error(f"Failed to update Google Sheet: {e}")
         return False
 
 
 def send_email_report(file_path, status="success", error_details=""):
     """Send email report with status and optional error details."""
     if not CONFIG['EMAIL_PASSWORD']:
-        logger.warning("⚠️ Skipping email: MAIL_PASS not configured")
+        logger.warning("Skipping email: MAIL_PASS not configured")
         return False
 
     try:
-        logger.info(f"📧 Sending email to {CONFIG['RECIPIENT_EMAIL']}...")
+        logger.info(f"Sending email to {CONFIG['RECIPIENT_EMAIL']}...")
 
         msg = EmailMessage()
 
         if status == "success":
-            msg['Subject'] = f"✅ Daily Price Report - {datetime.now().strftime('%Y-%m-%d')}"
+            msg['Subject'] = f"Daily Price Report - {datetime.now().strftime('%Y-%m-%d')}"
             content = "The automated price comparison update is complete. The Google Sheet is updated, and the file is attached."
         else:
-            msg['Subject'] = f"⚠️ Automation Alert - {datetime.now().strftime('%Y-%m-%d')}"
+            msg['Subject'] = f"Automation Alert - {datetime.now().strftime('%Y-%m-%d')}"
             content = f"The automation cycle encountered issues:\n\n{error_details}\n\nPlease check the logs for details."
 
         msg['From'] = CONFIG['SENDER_EMAIL']
@@ -157,10 +157,10 @@ def send_email_report(file_path, status="success", error_details=""):
             smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
             smtp.send_message(msg)
 
-        logger.info(f"✅ Email sent successfully")
+        logger.info(f"Email sent successfully")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to send email: {e}")
+        logger.error(f"Failed to send email: {e}")
         return False
 
 
@@ -172,7 +172,7 @@ def run_script(script_name, max_retries=None):
     attempt = 0
     while attempt <= max_retries:
         attempt += 1
-        logger.info(f"🚀 EXECUTING: {script_name} (Attempt {attempt}/{max_retries + 1})")
+        logger.info(f"EXECUTING: {script_name} (Attempt {attempt}/{max_retries + 1})")
         
         try:
             env = os.environ.copy()
@@ -189,26 +189,26 @@ def run_script(script_name, max_retries=None):
                 timeout=3600  # 1 hour timeout
             )
             
-            logger.info(f"✅ SUCCESS: {script_name} finished")
+            logger.info(f"SUCCESS: {script_name} finished")
             return True
             
         except subprocess.TimeoutExpired:
-            logger.error(f"⏱️ TIMEOUT: {script_name} exceeded 1 hour limit")
+            logger.error(f"TIMEOUT: {script_name} exceeded 1 hour limit")
             if attempt <= max_retries:
-                logger.info(f"🔄 Retrying in 30 seconds...")
+                logger.info(f"Retrying in 30 seconds...")
                 time.sleep(30)
             continue
         except subprocess.CalledProcessError as e:
-            logger.error(f"❌ ERROR in {script_name}: Exit code {e.returncode}")
+            logger.error(f"ERROR in {script_name}: Exit code {e.returncode}")
             if attempt <= max_retries:
-                logger.info(f"🔄 Retrying in 30 seconds...")
+                logger.info(f"Retrying in 30 seconds...")
                 time.sleep(30)
             continue
         except Exception as e:
-            logger.error(f"❌ FATAL ERROR in {script_name}: {e}")
+            logger.error(f"FATAL ERROR in {script_name}: {e}")
             return False
     
-    logger.error(f"❌ CRITICAL: {script_name} failed after {max_retries + 1} attempts")
+    logger.error(f"CRITICAL: {script_name} failed after {max_retries + 1} attempts")
     return False
 
 
@@ -226,7 +226,7 @@ def main():
     start_time = datetime.now(tz)
     
     logger.info("="*60)
-    logger.info(f"🌟 AUTOMATION CYCLE STARTED: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"AUTOMATION CYCLE STARTED: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
     
     # Step 0: Validation and cleanup
@@ -241,60 +241,60 @@ def main():
     for f in ["subcategory_links.txt", "all_pages_to_scrape.txt"]:
         if os.path.exists(f):
             os.remove(f)
-            logger.info(f"🗑️ Deleted old file: {f}")
+            logger.info(f"Deleted old file: {f}")
     
     execution_log = {}
     
 
     # Step 1: Link Collection
-    logger.info("\n📍 STEP 1: Link Collection")
+    logger.info("\nSTEP 1: Link Collection")
     execution_log['get_links'] = run_script("get_links.py")
     if not execution_log['get_links']:
-        logger.error("❌ Failed to get Acoustic links. Aborting.")
+        logger.error("Failed to get Acoustic links. Aborting.")
         send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
         return False
 
     execution_log['geovoice_links'] = run_script("geovoice_get_links.py")
     if not execution_log['geovoice_links']:
-        logger.error("❌ Failed to get Geovoice links. Aborting.")
+        logger.error("Failed to get Geovoice links. Aborting.")
         send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Geovoice)")
         return False
 
     # Step 2: Data Extraction (Scraping) - Now turbo-optimized and concurrent
-    logger.info("\n📍 STEP 2: Data Extraction (Turbo)")
+    logger.info("\nSTEP 2: Data Extraction (Turbo)")
     try:
         asyncio.run(scrape_acoustic())
         execution_log['scraper'] = True
     except Exception as e:
-        logger.error(f"❌ Acoustic scrape failed: {e}")
+        logger.error(f"Acoustic scrape failed: {e}")
         execution_log['scraper'] = False
 
     try:
         asyncio.run(scrape_geovoice())
         execution_log['crawler'] = True
     except Exception as e:
-        logger.error(f"❌ Geovoice scrape failed: {e}")
+        logger.error(f"Geovoice scrape failed: {e}")
         execution_log['crawler'] = False
 
     if not (execution_log['scraper'] or execution_log['crawler']):
-        logger.error("❌ Both scrapers failed. No data to compare.")
+        logger.error("Both scrapers failed. No data to compare.")
         send_email_report("", status="failure", error_details="Failed at Step 2: No valid scraping data")
         return False
 
     # Step 3: Price Comparison
-    logger.info("\n📍 STEP 3: Price Comparison")
+    logger.info("\nSTEP 3: Price Comparison")
     execution_log['compare'] = run_script("compare_prices.py")
     if not execution_log['compare']:
-        logger.error("❌ Price comparison failed.")
+        logger.error("Price comparison failed.")
         send_email_report("", status="failure", error_details="Failed at Step 3: Price Comparison")
         return False
     
     # Step 4: Reporting and Delivery
-    logger.info("\n📍 STEP 4: Reporting and Delivery")
+    logger.info("\nSTEP 4: Reporting and Delivery")
     latest_report = find_latest_report()
     
     if latest_report:
-        logger.info(f"📊 Found report: {latest_report}")
+        logger.info(f"Found report: {latest_report}")
         
         # Upload to Google Sheets
         sheets_success = upload_to_google_sheets(latest_report)
@@ -305,7 +305,7 @@ def main():
         execution_log['upload'] = sheets_success
         execution_log['email'] = email_success
     else:
-        logger.error("❌ No report files found for delivery")
+        logger.error("No report files found for delivery")
         send_email_report("", status="failure", error_details="Failed at Step 4: No report file generated")
         return False
     
@@ -314,16 +314,16 @@ def main():
     duration = end_time - start_time
     
     logger.info("\n" + "="*60)
-    logger.info("📋 EXECUTION SUMMARY:")
-    logger.info(f"   Link Collection: {'✅' if execution_log.get('get_links') else '❌'}")
-    logger.info(f"   Geovoice Links: {'✅' if execution_log.get('geovoice_links') else '❌'}")
-    logger.info(f"   Scraper: {'✅' if execution_log.get('scraper') else '⚠️'}")
-    logger.info(f"   Crawler: {'✅' if execution_log.get('crawler') else '⚠️'}")
-    logger.info(f"   Price Comparison: {'✅' if execution_log.get('compare') else '❌'}")
-    logger.info(f"   Google Sheets Upload: {'✅' if execution_log.get('upload') else '❌'}")
-    logger.info(f"   Email Sent: {'✅' if execution_log.get('email') else '⚠️'}")
-    logger.info(f"\n🏁 CYCLE FINISHED")
-    logger.info(f"   ⏱️  Duration: {duration}")
+    logger.info("EXECUTION SUMMARY:")
+    logger.info(f"   Link Collection: {'OK' if execution_log.get('get_links') else 'FAIL'}")
+    logger.info(f"   Geovoice Links: {'OK' if execution_log.get('geovoice_links') else 'FAIL'}")
+    logger.info(f"   Scraper: {'OK' if execution_log.get('scraper') else 'WARN'}")
+    logger.info(f"   Crawler: {'OK' if execution_log.get('crawler') else 'WARN'}")
+    logger.info(f"   Price Comparison: {'OK' if execution_log.get('compare') else 'FAIL'}")
+    logger.info(f"   Google Sheets Upload: {'OK' if execution_log.get('upload') else 'FAIL'}")
+    logger.info(f"   Email Sent: {'OK' if execution_log.get('email') else 'WARN'}")
+    logger.info(f"\nCYCLE FINISHED")
+    logger.info(f"   Duration: {duration}")
     logger.info("="*60 + "\n")
     
     return True

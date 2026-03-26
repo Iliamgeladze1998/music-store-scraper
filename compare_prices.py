@@ -20,10 +20,10 @@ def find_latest_file(keyword):
     return pd.read_excel(latest_file)
 
 def clean_id(sku):
-    """ Removes dashes, dots and spaces for better matching (e.g., 10-1662 -> 101662) """
+    """Removes dashes, dots, and spaces for better matching, always returns a string, and applies .strip().upper()."""
     if pd.isna(sku):
         return ""
-    # ვტოვებთ მხოლოდ ციფრებს და ასოებს
+    # Remove non-alphanumeric, always string, strip and upper
     return re.sub(r'[^a-zA-Z0-9]', '', str(sku)).strip().upper()
 
 def compare_prices():
@@ -38,8 +38,8 @@ def compare_prices():
         return
 
     # 2. მოვამზადოთ ID-ები შესადარებლად (გავასუფთაოთ ტირეებისგან)
-    df_gv['MATCH_ID'] = df_gv['UNIQUE_ID'].apply(clean_id)
-    df_ac['MATCH_ID'] = df_ac['UNIQUE_ID'].apply(clean_id)
+    df_gv['MATCH_ID'] = df_gv['UNIQUE_ID'].astype(str).apply(lambda x: clean_id(x))
+    df_ac['MATCH_ID'] = df_ac['UNIQUE_ID'].astype(str).apply(lambda x: clean_id(x))
 
     # 3. შევაერთოთ ცხრილები (მხოლოდ ის პროდუქტები, რაც ორივეშია)
     merged_df = pd.merge(

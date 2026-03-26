@@ -40,7 +40,7 @@ class AcousticScraper(BaseScraper):
                         try:
                             sku_el = await product.query_selector(selector)
                             if sku_el:
-                                unique_id = (await sku_el.inner_text()).strip()
+                                unique_id = str((await sku_el.inner_text())).strip().upper()
                                 break
                         except:
                             continue

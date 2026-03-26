@@ -16,7 +16,7 @@ class GeovoiceScraper(BaseScraper):
         try:
             response = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             if not response or response.status != 200:
-                self.logger.warning(f"⚠️ HTTP {getattr(response, 'status', 'N/A')} for {url}")
+                self.logger.warning(f"HTTP {getattr(response, 'status', 'N/A')} for {url}")
                 return products_data
             try:
                 await page.wait_for_selector(self.selectors['product_container'], timeout=5000)
@@ -35,7 +35,7 @@ class GeovoiceScraper(BaseScraper):
                         try:
                             sku_el = await product.query_selector(selector)
                             if sku_el:
-                                unique_id = (await sku_el.inner_text()).strip()
+                                unique_id = str((await sku_el.inner_text())).strip().upper()
                                 break
                         except:
                             continue
@@ -65,11 +65,11 @@ class GeovoiceScraper(BaseScraper):
                     })
                 except Exception as e:
                     self.logger.warning(f"Product parse error: {e}")
-            self.logger.info(f"✅ Found {len(products_data)} products at {url}")
+            self.logger.info(f"Found {len(products_data)} products at {url}")
         except asyncio.TimeoutError:
-            self.logger.warning(f"⏱️ Timeout loading {url}")
+            self.logger.warning(f"Timeout loading {url}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Error: {str(e)[:40]} at {url}")
+            self.logger.warning(f"Error: {str(e)[:40]} at {url}")
         return products_data
 
 
