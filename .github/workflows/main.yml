@@ -5,9 +5,6 @@ on:
   schedule:
     - cron: '0 13 * * *'
   workflow_dispatch:
-
-  manual_test:
-    description: 'Run a manual test of the full pipeline.'
     inputs:
       test_reason:
         description: 'Reason for manual test (optional)'
