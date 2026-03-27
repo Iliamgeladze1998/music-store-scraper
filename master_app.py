@@ -8,6 +8,7 @@ import glob
 import pytz
 import gspread
 import pandas as pd
+import numpy as np
 from oauth2client.service_account import ServiceAccountCredentials
 from email.message import EmailMessage
 from datetime import datetime, timedelta
@@ -245,19 +246,19 @@ def main():
         return False
 
     # Strict cleanup: delete all inventory and report files
-    for pattern in ["*inventory*.xlsx", "*report*.xlsx"]:
-        for file in glob.glob(pattern):
-            try:
-                os.remove(file)
-                logger.info(f"Deleted old file: {file}")
-            except Exception as e:
-                logger.warning(f"Could not delete {file}: {e}")
+    # for pattern in ["*inventory*.xlsx", "*report*.xlsx"]:
+    #     for file in glob.glob(pattern):
+    #         try:
+    #             os.remove(file)
+    #             logger.info(f"Deleted old file: {file}")
+    #         except Exception as e:
+    #             logger.warning(f"Could not delete {file}: {e}")
 
     # Clean old link files
-    for f in ["subcategory_links.txt", "music-store-all-links.txt", "music-store-product-links.txt"]:
-        if os.path.exists(f):
-            os.remove(f)
-            logger.info(f"Deleted old file: {f}")
+    # for f in ["subcategory_links.txt", "music-store-all-links.txt", "music-store-product-links.txt"]:
+    #     if os.path.exists(f):
+    #         os.remove(f)
+    #         logger.info(f"Deleted old file: {f}")
 
     # Generate a single session timestamp
     session_ts = datetime.now().strftime("%Y%m%d_%H%M")
@@ -267,39 +268,39 @@ def main():
 
     execution_log = {}
 
-    print("\n==================== STEP 1: Link Collection ====================", flush=True)
-    execution_log['get_links'] = run_script("get_links.py")
-    if not execution_log['get_links']:
-        logger.error("Failed to get Acoustic links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
-        return False
+    # print("\n==================== STEP 1: Link Collection ====================", flush=True)
+    # execution_log['get_links'] = run_script("get_links.py")
+    # if not execution_log['get_links']:
+    #     logger.error("Failed to get Acoustic links. Aborting.")
+    #     send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
+    #     return False
 
-    execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
-    if not execution_log['musikis_links']:
-        logger.error("Failed to get Musikis Saxli links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
-        return False
+    # execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
+    # if not execution_log['musikis_links']:
+    #     logger.error("Failed to get Musikis Saxli links. Aborting.")
+    #     send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
+    #     return False
 
-    execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
-    if not execution_log['musikis_all_product_links']:
-        logger.error("Failed to get Musikis Saxli product links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
-        return False
+    # execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
+    # if not execution_log['musikis_all_product_links']:
+    #     logger.error("Failed to get Musikis Saxli product links. Aborting.")
+    #     send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
+    #     return False
 
-    print("\n==================== STEP 2: Data Extraction ====================", flush=True)
-    execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
-    if not execution_log['scraper']:
-        logger.error("Acoustic scrape failed. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
-        return False
+    # print("\n==================== STEP 2: Data Extraction ====================", flush=True)
+    # execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
+    # if not execution_log['scraper']:
+    #     logger.error("Acoustic scrape failed. Aborting.")
+    #     send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
+    #     return False
 
-    execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
-    if not execution_log['musikis_scraper']:
-        logger.error("Musikis Saxli scrape failed. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
-        return False
+    # execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
+    # if not execution_log['musikis_scraper']:
+    #     logger.error("Musikis Saxli scrape failed. Aborting.")
+    #     send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
+    #     return False
 
-    print("\n==================== STEP 3: Price Comparison ====================", flush=True)
+    #print("\n==================== STEP 3: Price Comparison ====================", flush=True)
     # Convert Musikis Saxli CSV to XLSX for comparison
     try:
         df = pd.read_csv("music_store_inventory.csv", delimiter='\t', encoding='utf-16')
@@ -314,7 +315,7 @@ def main():
     try:
         cmd = [sys.executable, "compare_prices.py",
                "--acoustic_file", acoustic_file,
-               "--geovoice_file", musikis_xlsx,
+               "--musikis_file", musikis_xlsx,
                "--output_file", report_file]
         logger.info(f"Running price comparison: {' '.join(cmd)}")
         result = subprocess.run(cmd, check=True)
@@ -328,15 +329,40 @@ def main():
     print("\n==================== STEP 4: Reporting and Delivery ====================", flush=True)
     if os.path.exists(report_file):
         logger.info(f"Found report: {report_file}")
+
+        temp_df = pd.read_excel(report_file)
+
+    # 1. ჯერ დავითვალოთ სხვაობა (აქ შეიძლება NaN-ები წარმოიქმნას)
+        temp_df['Price_Diff'] = (temp_df['PRICE_AC'] - temp_df['PRICE_MS']).abs()
+
+        # 2. შევქმნათ მასკა: სადაც ფასი 0-ია ან მარაგში არაა
+        mask = (temp_df['PRICE_AC'] == 0) | (temp_df['PRICE_MS'] == 0) | \
+            (temp_df['PRICE_AC'].isna()) | (temp_df['PRICE_MS'].isna()) | \
+            (temp_df['STATUS_AC'].astype(str).str.contains('Out of Stock', case=False, na=False)) | \
+            (temp_df['STATUS_MS'].astype(str).str.contains('Out of Stock', case=False, na=False))
+        
+        # 3. მხოლოდ სხვაობის სვეტში ჩავწეროთ 0, სადაც მასკა მუშაობს
+        temp_df.loc[mask, 'Price_Diff'] = 0
+
+        # 4. კრიტიკული მომენტი: Google Sheets-ისთვის მხოლოდ სხვაობის სვეტი "გავასუფთაოთ"
+        # ფასებს (PRICE_MS) თავი დაანებე, რომ 0-ებით არ ჩანაცვლდეს რეალური მონაცემი
+        temp_df['Price_Diff'] = temp_df['Price_Diff'].fillna(0)
+        
+        # 5. თუ რომელიმე უჯრა მაინც NaN-ია სხვა სვეტებში, ცარიელ სტრინგად ("") ვაქცევთ 0-ის ნაცვლად
+        # ასე Excel-ში 0-ები არ გამოჩნდება იქ, სადაც მონაცემი უბრალოდ არ გვაქვს
+        temp_df = temp_df.replace([np.nan, np.inf, -np.inf], "") 
+
+        # 6. შენახვა და ატვირთვა
+        temp_df.to_excel(report_file, index=False)
+        
+        # 5. ატვირთვა
         sheets_success = upload_to_google_sheets(report_file)
-        email_success = send_email_report(report_file, status="success")
+        
         execution_log['upload'] = sheets_success
-        execution_log['email'] = email_success
+        execution_log['email'] = False
     else:
         logger.error("No report files found for delivery")
-        send_email_report("", status="failure", error_details="Failed at Step 4: No report file generated")
         return False
-    
     # Final Summary
     end_time = datetime.now(tz)
     duration = end_time - start_time
@@ -364,5 +390,5 @@ if __name__ == "__main__":
         success = main()
         sys.exit(0 if success else 1)
     except Exception as e:
-        logger.critical(f"🔥 CRITICAL ERROR: {e}", exc_info=True)
+        logger.critical(f" CRITICAL ERROR: {e}", exc_info=True)
         sys.exit(1)
