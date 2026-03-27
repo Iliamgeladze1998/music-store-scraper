@@ -15,8 +15,7 @@ import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 
-from scraper import scrape_acoustic
-from crawler import scrape_geovoice
+
 
 load_dotenv()
 
@@ -229,79 +228,99 @@ def main():
     logger.info(f"AUTOMATION CYCLE STARTED: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
     
-    # Step 0: Validation and cleanup
+
+
+    # Step 0: Validation and strict cleanup
     if not validate_environment():
-        logger.error("❌ Environment validation failed. Aborting.")
+        logger.error("Environment validation failed. Aborting.")
         return False
-    
-    # Cleanup old files
-    cleanup_old_reports(days=CONFIG['ARCHIVE_DAYS'])
-    
+
+    # Strict cleanup: delete all inventory and report files
+    for pattern in ["*inventory*.xlsx", "*report*.xlsx"]:
+        for file in glob.glob(pattern):
+            try:
+                os.remove(file)
+                logger.info(f"Deleted old file: {file}")
+            except Exception as e:
+                logger.warning(f"Could not delete {file}: {e}")
+
     # Clean old link files
-    for f in ["subcategory_links.txt", "geovoice_subcategory_links.txt"]:
+    for f in ["subcategory_links.txt", "music-store-all-links.txt", "music-store-product-links.txt"]:
         if os.path.exists(f):
             os.remove(f)
             logger.info(f"Deleted old file: {f}")
-    
-    execution_log = {}
-    
 
-    # Step 1: Link Collection
-    logger.info("\nSTEP 1: Link Collection")
+    # Generate a single session timestamp
+    session_ts = datetime.now().strftime("%Y%m%d_%H%M")
+    acoustic_file = f"acoustic_inventory_{session_ts}.xlsx"
+    musikis_file = f"music_store_inventory_{session_ts}.csv"
+    report_file = f"FINAL_MATCH_REPORT_{session_ts}.xlsx"
+
+    execution_log = {}
+
+    print("\n==================== STEP 1: Link Collection ====================", flush=True)
     execution_log['get_links'] = run_script("get_links.py")
     if not execution_log['get_links']:
         logger.error("Failed to get Acoustic links. Aborting.")
         send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
         return False
 
-    execution_log['geovoice_links'] = run_script("geovoice_get_links.py")
-    if not execution_log['geovoice_links']:
-        logger.error("Failed to get Geovoice links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Geovoice)")
+    execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
+    if not execution_log['musikis_links']:
+        logger.error("Failed to get Musikis Saxli links. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
         return False
 
-    # Step 2: Data Extraction (Scraping) - Now turbo-optimized and concurrent
-    logger.info("\nSTEP 2: Data Extraction (Turbo)")
-    try:
-        asyncio.run(scrape_acoustic())
-        execution_log['scraper'] = True
-    except Exception as e:
-        logger.error(f"Acoustic scrape failed: {e}")
-        execution_log['scraper'] = False
-
-    try:
-        asyncio.run(scrape_geovoice())
-        execution_log['crawler'] = True
-    except Exception as e:
-        logger.error(f"Geovoice scrape failed: {e}")
-        execution_log['crawler'] = False
-
-    if not (execution_log['scraper'] or execution_log['crawler']):
-        logger.error("Both scrapers failed. No data to compare.")
-        send_email_report("", status="failure", error_details="Failed at Step 2: No valid scraping data")
+    execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
+    if not execution_log['musikis_all_product_links']:
+        logger.error("Failed to get Musikis Saxli product links. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
         return False
 
-    # Step 3: Price Comparison
-    logger.info("\nSTEP 3: Price Comparison")
-    execution_log['compare'] = run_script("compare_prices.py")
-    if not execution_log['compare']:
-        logger.error("Price comparison failed.")
+    print("\n==================== STEP 2: Data Extraction ====================", flush=True)
+    execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
+    if not execution_log['scraper']:
+        logger.error("Acoustic scrape failed. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
+        return False
+
+    execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
+    if not execution_log['musikis_scraper']:
+        logger.error("Musikis Saxli scrape failed. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
+        return False
+
+    print("\n==================== STEP 3: Price Comparison ====================", flush=True)
+    # Convert Musikis Saxli CSV to XLSX for comparison
+    try:
+        df = pd.read_csv("music_store_inventory.csv", delimiter='\t', encoding='utf-16')
+        df.to_excel(musikis_file.replace('.csv', '.xlsx'), index=False)
+        musikis_xlsx = musikis_file.replace('.csv', '.xlsx')
+    except Exception as e:
+        logger.error(f"Failed to convert Musikis Saxli CSV to XLSX: {e}")
+        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli CSV to XLSX conversion")
+        return False
+
+    # Run price comparison
+    try:
+        cmd = [sys.executable, "compare_prices.py",
+               "--acoustic_file", acoustic_file,
+               "--geovoice_file", musikis_xlsx,
+               "--output_file", report_file]
+        logger.info(f"Running price comparison: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True)
+        execution_log['compare'] = (result.returncode == 0)
+    except Exception as e:
+        logger.error(f"Price comparison failed: {e}")
+        execution_log['compare'] = False
         send_email_report("", status="failure", error_details="Failed at Step 3: Price Comparison")
         return False
-    
-    # Step 4: Reporting and Delivery
-    logger.info("\nSTEP 4: Reporting and Delivery")
-    latest_report = find_latest_report()
-    
-    if latest_report:
-        logger.info(f"Found report: {latest_report}")
-        
-        # Upload to Google Sheets
-        sheets_success = upload_to_google_sheets(latest_report)
-        
-        # Send email
-        email_success = send_email_report(latest_report, status="success")
-        
+
+    print("\n==================== STEP 4: Reporting and Delivery ====================", flush=True)
+    if os.path.exists(report_file):
+        logger.info(f"Found report: {report_file}")
+        sheets_success = upload_to_google_sheets(report_file)
+        email_success = send_email_report(report_file, status="success")
         execution_log['upload'] = sheets_success
         execution_log['email'] = email_success
     else:
@@ -316,9 +335,10 @@ def main():
     logger.info("\n" + "="*60)
     logger.info("EXECUTION SUMMARY:")
     logger.info(f"   Link Collection: {'OK' if execution_log.get('get_links') else 'FAIL'}")
-    logger.info(f"   Geovoice Links: {'OK' if execution_log.get('geovoice_links') else 'FAIL'}")
-    logger.info(f"   Scraper: {'OK' if execution_log.get('scraper') else 'WARN'}")
-    logger.info(f"   Crawler: {'OK' if execution_log.get('crawler') else 'WARN'}")
+    logger.info(f"   Musikis Saxli Links: {'OK' if execution_log.get('musikis_links') else 'FAIL'}")
+    logger.info(f"   Musikis Saxli Product Links: {'OK' if execution_log.get('musikis_all_product_links') else 'FAIL'}")
+    logger.info(f"   Scraper (Acoustic): {'OK' if execution_log.get('scraper') else 'WARN'}")
+    logger.info(f"   Scraper (Musikis Saxli): {'OK' if execution_log.get('musikis_scraper') else 'WARN'}")
     logger.info(f"   Price Comparison: {'OK' if execution_log.get('compare') else 'FAIL'}")
     logger.info(f"   Google Sheets Upload: {'OK' if execution_log.get('upload') else 'FAIL'}")
     logger.info(f"   Email Sent: {'OK' if execution_log.get('email') else 'WARN'}")

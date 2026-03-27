@@ -1,4 +1,7 @@
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
 import re
 from datetime import datetime
@@ -90,9 +93,7 @@ class AcousticScraper(BaseScraper):
             self.logger.warning(f"Error: {str(e)[:40]} at {url}")
         return products_data
 
-async def scrape_acoustic():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    file_name = f"acoustic_inventory_{timestamp}.xlsx"
+async def scrape_acoustic(output_file):
     start_time = datetime.now()
     try:
         with open("subcategory_links.txt", "r", encoding="utf-8") as f:
@@ -107,7 +108,6 @@ async def scrape_acoustic():
     logger = logging.getLogger("acoustic")
     scraper = AcousticScraper(logger=logger)
     all_data = []
-    # Producer-consumer: gather links, then process in parallel
     results = await scraper.run(urls, scraper.process_page)
     for batch in results:
         if batch:
@@ -115,19 +115,21 @@ async def scrape_acoustic():
     if all_data:
         df = pd.DataFrame(all_data)
         df.drop_duplicates(subset=['UNIQUE_ID'], keep='first', inplace=True)
-        df.to_excel(file_name, index=False)
+        df.to_excel(output_file, index=False)
         elapsed = (datetime.now() - start_time).total_seconds()
         print(f"\n{'='*50}")
         print(f"COMPLETE!")
         print(f"   Total items: {len(df)}")
         print(f"   Time: {elapsed:.1f}s ({elapsed/len(urls):.1f}s per category)")
-        print(f"   Saved: {file_name}")
+        print(f"   Saved: {output_file}")
         print(f"{'='*50}\n", flush=True)
     else:
         print("\nNo data collected.", flush=True)
 
 if __name__ == "__main__":
-    asyncio.run(scrape_acoustic())
-
-if __name__ == "__main__":
-    asyncio.run(scrape_acoustic())
+    import sys
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_file', required=True)
+    args = parser.parse_args()
+    asyncio.run(scrape_acoustic(args.output_file))

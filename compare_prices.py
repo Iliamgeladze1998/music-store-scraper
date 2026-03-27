@@ -1,86 +1,74 @@
+
 import pandas as pd
-import os
-import glob
 import re
 from datetime import datetime
-
-def find_latest_file(keyword):
-    """ Finds the most recent file, ignoring temporary Excel files (~$) """
-    # ვეძებთ ფაილებს, რომლებიც შეიცავენ სახელს და არ იწყებიან ~$ სიმბოლოებით
-    files = [f for f in glob.glob(f"*{keyword}*.[cx][ls]*") if not f.startswith("~$")]
-    
-    if not files:
-        return None
-    
-    latest_file = max(files, key=os.path.getctime)
-    print(f"--- Loading: {latest_file} ---")
-    
-    if latest_file.endswith('.csv'):
-        return pd.read_csv(latest_file)
-    return pd.read_excel(latest_file)
+import sys
 
 def clean_id(sku):
     """Removes dashes, dots, and spaces for better matching, always returns a string, and applies .strip().upper()."""
     if pd.isna(sku):
         return ""
-    # Remove non-alphanumeric, always string, strip and upper
     return re.sub(r'[^a-zA-Z0-9]', '', str(sku)).strip().upper()
 
-def compare_prices():
+def compare_prices(acoustic_file, musikis_file, output_file):
     print("--- Starting Price Comparison (Strict ID Matching) ---")
-
-    # 1. მოვძებნოთ ბოლო ფაილები
-    df_gv = find_latest_file("geovoice")
-    df_ac = find_latest_file("acoustic")
-
-    if df_gv is None or df_ac is None:
-        print("❌ Error: Missing inventory files! Make sure scrapers finished correctly.")
+    print(f"[INPUT AUDIT] Loading Acoustic: {acoustic_file}", flush=True)
+    print(f"[INPUT AUDIT] Loading Musikis Saxli: {musikis_file}", flush=True)
+    try:
+        df_ac = pd.read_excel(acoustic_file)
+        df_ms = pd.read_excel(musikis_file)
+    except Exception as e:
+        print(f"[ERROR] Failed to load input files: {e}", flush=True)
         return
 
-    # 2. მოვამზადოთ ID-ები შესადარებლად (გავასუფთაოთ ტირეებისგან)
-    df_gv['MATCH_ID'] = df_gv['UNIQUE_ID'].astype(str).apply(lambda x: clean_id(x))
+    print(f"[AUDIT] Musikis Saxli Unique IDs found in Excel: {df_ms['UNIQUE_ID'].nunique()}", flush=True)
+    print(f"[AUDIT] Acoustic Unique IDs found in Excel: {df_ac['UNIQUE_ID'].nunique()}", flush=True)
+    print(f"[FORMAT SAMPLE] First 5 MS IDs: {df_ms['UNIQUE_ID'].astype(str).head(5).tolist()}", flush=True)
+    print(f"[FORMAT SAMPLE] First 5 AC IDs: {df_ac['UNIQUE_ID'].astype(str).head(5).tolist()}", flush=True)
+
+    df_ms['MATCH_ID'] = df_ms['UNIQUE_ID'].astype(str).apply(lambda x: clean_id(x))
     df_ac['MATCH_ID'] = df_ac['UNIQUE_ID'].astype(str).apply(lambda x: clean_id(x))
 
-    # 3. შევაერთოთ ცხრილები (მხოლოდ ის პროდუქტები, რაც ორივეშია)
     merged_df = pd.merge(
         df_ac, 
-        df_gv, 
+        df_ms, 
         on='MATCH_ID', 
-        suffixes=('_AC', '_GV')
+        suffixes=('_AC', '_MS')
     )
 
+    print(f"[MATCHING] Final matches identified: {len(merged_df)}", flush=True)
+
     if merged_df.empty:
-        print("⚠️ No matching products found between the two stores.")
+        print("No matching products found between the two stores.", flush=True)
         return
 
-    # 4. ფასების ფორმატირება და სხვაობის დათვლა
     merged_df['PRICE_AC'] = pd.to_numeric(merged_df['PRICE_AC'], errors='coerce').fillna(0)
-    merged_df['PRICE_GV'] = pd.to_numeric(merged_df['PRICE_GV'], errors='coerce').fillna(0)
-    merged_df['Price_Diff'] = merged_df['PRICE_AC'] - merged_df['PRICE_GV']
+    merged_df['PRICE_MS'] = pd.to_numeric(merged_df['PRICE_MS'], errors='coerce').fillna(0)
+    merged_df['Price_Diff'] = merged_df['PRICE_AC'] - merged_df['PRICE_MS']
 
-    # 5. რეპორტის სვეტების დალაგება
     final_report = merged_df[[
         'UNIQUE_ID_AC',
         'NAME_AC',
         'PRICE_AC',
         'STATUS_AC',
-        'NAME_GV',
-        'PRICE_GV',
-        'STATUS_GV',
+        'NAME_MS',
+        'PRICE_MS',
+        'STATUS_MS',
         'Price_Diff',
         'LINK_AC',
-        'LINK_GV'
+        'LINK_MS'
     ]].rename(columns={'UNIQUE_ID_AC': 'UNIQUE_ID'})
 
-    # 6. შენახვა
-    timestamp = datetime.now().strftime("%m%d_%H%M")
-    output_name = f"FINAL_MATCH_REPORT_{timestamp}.xlsx"
-    
-    final_report.to_excel(output_name, index=False)
-    
-    print(f"\nSUCCESS!")
-    print(f"Matching products found: {len(final_report)}")
-    print(f"Report saved as: {output_name}")
+    final_report.to_excel(output_file, index=False)
+    print(f"\nSUCCESS!", flush=True)
+    print(f"Matching products found: {len(final_report)}", flush=True)
+    print(f"Report saved as: {output_file}", flush=True)
 
 if __name__ == "__main__":
-    compare_prices()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--acoustic_file', required=True)
+    parser.add_argument('--musikis_file', required=True)
+    parser.add_argument('--output_file', required=True)
+    args = parser.parse_args()
+    compare_prices(args.acoustic_file, args.musikis_file, args.output_file)
