@@ -1,70 +1,221 @@
-# 🎸 Music Store Market Analyzer (Acoustic vs Geovoice)
+# 🎸 Music Store Market Analyzer (Acoustic vs Musikis Saxli)
 
-This project is an automated web scraping and data analysis tool designed to compare product prices and inventory status between two major musical instrument retailers in Georgia: **Acoustic.ge** and **Geovoice.ge**.
 
-## 🚀 How the Process Works (Workflow)
 
-The system is managed by a central **Master App** that executes a multi-stage pipeline. The process ensures data consistency by following these steps:
+A robust, fully automated Python pipeline for scraping, comparing, and reporting product prices and inventory between Georgia’s leading music retailers: **Acoustic.ge** and **Musikis Saxli**.
 
-1.  **🔍 Link Collection:**
-    * `get_links.py`: Scans **Acoustic.ge** to gather all product URLs.
-    * `geovoice_get_links.py`: Scans **Geovoice.ge** to extract all individual product pages.
 
-2.  **📦 Data Extraction (Scraping):**
-    * `scraper.py`: Visits each Acoustic link to extract the product name, price, and stock status.
-    * `crawler.py`: Performs the same extraction for all Geovoice links.
 
-3.  **⚖️ Market Comparison:**
-    * `compare_prices.py`: Merges both databases. It utilizes a **Fuzzy Matching** algorithm to accurately pair products with similar names or model numbers. It calculates price differences and identifies stock availability across both stores.
+---
 
-4.  **📊 Final Reporting:**
-    * Generates a time-stamped Excel report (e.g., `FINAL_MARKET_ANALYSIS_0323_1200.xlsx`) for easy review.
 
-## 🛠️ Local-Only Execution
 
-This project is now designed for 100% local execution. No GitHub Actions or cloud automation is required.
+## 🚦 Workflow Overview
 
-### 1. Setup
 
-- Clone/download the repository to your local machine.
-- Install Python 3.x and dependencies:
-  ```bash
-  pip install -r requirements.txt
-  ```
-- Create a `.env` file in the project root with your sensitive variables:
-  ```env
-  MAIL_PASS=your_email_password_here
-  SENDER_EMAIL=your_email@example.com
-  RECIPIENT_EMAIL=recipient@example.com
-  SPREADSHEET_ID=your_google_sheet_id
-  # Add other variables as needed
-  ```
-- Place your `credentials.json` (Google API credentials) in the project root.
 
-### 2. Run the Full Pipeline
+The pipeline is orchestrated by master_app.py and consists of the following stages:
 
-```bash
-python master_app.py
-```
 
-### 3. Run Tests
 
-```bash
-pytest tests/
-```
+1. **Link Collection**
+
+   - get_links.py: Collects all category/product links from Acoustic.ge.
+
+   - musikis-saxli-get-links.py: Collects all category links from Musikis Saxli.
+
+   - musikis-saxli-get-all-product-links.py: Collects all product links from Musikis Saxli.
+
+
+
+2. **Data Extraction**
+
+   - scraper.py: Scrapes product data (name, price, status, ID, link) from Acoustic.ge using Playwright.
+
+   - musikis-saxli-scraper.py: Scrapes product data from Musikis Saxli.
+
+
+
+3. **Price Comparison**
+
+   - compare_prices.py: Compares Acoustic and Musikis Saxli inventories using fuzzy matching, generating a detailed Excel report.
+
+
+
+4. **Reporting & Delivery**
+
+   - The final report is uploaded to Google Sheets and emailed to the configured recipient.
+
+   - All steps are logged to automation.log for full transparency and auditability.
+
+
+
+---
+
+
+
+## 🛠️ Setup Instructions
+
+
+
+1. **Clone the Repository**
+
+   ```bash
+
+   git clone https://github.com/Iliamgeladze1998/music-store-scraper.git
+
+   cd MyProject2
+
+   ```
+
+
+
+2. **Install Python Dependencies**
+
+   ```bash
+
+   pip install -r requirements.txt
+
+   playwright install
+
+   ```
+
+
+
+3. **Environment Configuration**
+
+   - Create a .env file in the project root:
+
+     ```
+
+     MAIL_PASS=your_email_password
+
+     SENDER_EMAIL=your_email@example.com
+
+     RECIPIENT_EMAIL=recipient@example.com
+
+     SPREADSHEET_ID=your_google_sheet_id
+
+     TIMEZONE=Asia/Tbilisi
+
+     ```
+
+   - Place your `credentials.json` (Google Service Account) in the project root.
+
+
+
+4. **Run the Pipeline**
+
+   ```bash
+
+   python master_app.py
+
+   ```
+
+
+
+   - All intermediate and final reports are timestamped and archived automatically.
+
+   - Logs are written to `automation.log`.
+
+
+
+5. **Testing**
+
+   ```bash
+
+   pytest tests/
+
+   ```
+
+
+
+---
+
+
+
+## 🧑‍💻 Project Structure
+
+
+
+- `master_app.py` — Orchestrates the full pipeline, error handling, reporting, and delivery.
+
+- `get_links.py`, `musikis-saxli-get-links.py`, `musikis-saxli-get-all-product-links.py` — Link collection scripts.
+
+- `scraper.py`, `musikis-saxli-scraper.py` — Data extraction (scraping) scripts.
+
+- `compare_prices.py` — Price and inventory comparison logic.
+
+- `requirements.txt` — All Python dependencies.
+
+- `credentials.json`, `.env` — Sensitive configuration (never commit these to public repos).
+
+- `tests/` — Unit and integration tests.
+
+
+
+---
+
+
 
 ## 🧰 Tech Stack
 
+
+
 - Python 3.x
-- Playwright (Web Automation & Scraping)
-- Pandas (Data Manipulation)
-- TheFuzz (String Matching & Comparison)
-- OpenPyXL (Excel Reporting)
+
+- Playwright (async, for robust web scraping)
+
+- Pandas, OpenPyXL (data processing and Excel reporting)
+
 - gspread, oauth2client (Google Sheets API)
-- pytest (Testing)
 
-## Notes
+- TheFuzz (fuzzy string matching)
 
-- All sensitive data is now loaded from `.env` and `credentials.json` in the project root.
-- No GitHub Actions or cloud automation is used. All scripts are run locally.
-- For any issues, check `automation.log` for detailed logs.
+- Logging, dotenv, pytest
+
+
+
+---
+
+
+
+## 📝 Notes & Best Practices
+
+
+
+- All secrets and credentials are loaded from `.env` and `credentials.json`.
+
+- The pipeline is designed for local execution; no cloud automation is required.
+
+- For troubleshooting, consult `automation.log` for detailed step-by-step logs.
+
+- The system is robust to errors: failed steps trigger email alerts with error details.
+
+
+
+---
+
+
+
+Replace `<your-username>/<repo-name>` with your actual GitHub details.  
+
+Let me know if you want this written directly to your README.md or need further customization!---
+
+
+
+## 🧑‍💻 Project Structure
+
+
+
+- `master_app.py` — Orchestrates the full pipeline, error handling, reporting, and delivery.
+
+- `get_links.py`, `musikis-saxli-get-links.py`, `musikis-saxli-get-all-product-links.py` — Link collection scripts.
+
+- `scraper.py`, `musikis-saxli-scraper.py` — Data extraction (scraping) scripts.
+
+- `compare_prices.py` — Price and inventory comparison logic.
+
+- `requirements.txt` — All Python dependencies.
+
+- `credentials.json`, `.env` — Sensitive configuration

@@ -172,25 +172,34 @@ def run_script(script_name, max_retries=None):
     while attempt <= max_retries:
         attempt += 1
         logger.info(f"EXECUTING: {script_name} (Attempt {attempt}/{max_retries + 1})")
-        
+
         try:
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             env["PYTHONUNBUFFERED"] = "1"
-            
-            # Run with captured output for better logging
+
+            # If script_name is a string with spaces (i.e., has arguments), split it for subprocess
+            if isinstance(script_name, str):
+                import shlex
+                script_args = shlex.split(script_name)
+            else:
+                script_args = script_name
+
+            # Always prepend sys.executable
+            cmd = [sys.executable] + script_args
+
             result = subprocess.run(
-                [sys.executable, script_name],
+                cmd,
                 check=True,
                 env=env,
                 capture_output=False,
                 text=True,
-                timeout=3600  # 1 hour timeout
+                timeout=36000  # 10 hour timeout
             )
-            
+
             logger.info(f"SUCCESS: {script_name} finished")
             return True
-            
+
         except subprocess.TimeoutExpired:
             logger.error(f"TIMEOUT: {script_name} exceeded 1 hour limit")
             if attempt <= max_retries:
@@ -206,7 +215,7 @@ def run_script(script_name, max_retries=None):
         except Exception as e:
             logger.error(f"FATAL ERROR in {script_name}: {e}")
             return False
-    
+
     logger.error(f"CRITICAL: {script_name} failed after {max_retries + 1} attempts")
     return False
 
