@@ -1,4 +1,3 @@
-
 import subprocess
 import sys
 import os
@@ -92,7 +91,7 @@ def cleanup_old_reports(days=7):
 
 
 def upload_to_google_sheets(file_path):
-    """Upload report to Google Sheets with better error handling."""
+    """Upload report to Google Sheets with comprehensive NaN handling."""
     try:
         logger.info(f"Uploading to Google Sheets: {file_path}")
         
@@ -106,10 +105,29 @@ def upload_to_google_sheets(file_path):
             df = pd.read_excel(file_path)
         else:
             df = pd.read_csv(file_path)
-
-        # Prepare and upload data
+        
+        # Comprehensive NaN handling to prevent JSON compliance error
+        # Step 1: Replace pandas NaN with None
+        df = df.replace({np.nan: None, pd.NaT: None})
+        
+        # Step 2: Handle any remaining null values
+        df = df.where(pd.notnull(df), None)
+        
+        # Step 3: Convert DataFrame to list with proper JSON serialization
+        data_to_upload = [df.columns.values.tolist()]
+        
+        # Convert each row to ensure NaN values become None
+        for _, row in df.iterrows():
+            row_data = []
+            for value in row:
+                if pd.isna(value) or value != value:  # Handle NaN cases
+                    row_data.append(None)
+                else:
+                    row_data.append(value)
+            data_to_upload.append(row_data)
+        
+        # Upload data
         sheet.clear()
-        data_to_upload = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(data_to_upload)
         
         logger.info(f"Google Sheet updated successfully ({len(df)} rows)")
@@ -221,6 +239,45 @@ def run_script(script_name, max_retries=None):
     return False
 
 
+def find_latest_inventory():
+    """Find the most recent inventory files with fallback logic."""
+    logger.info("Searching for inventory files...")
+    
+    # Try to find latest acoustic inventory file
+    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
+    if acoustic_files:
+        acoustic_file = max(acoustic_files, key=os.path.getctime)
+        logger.info(f"Found {len(acoustic_files)} acoustic files, selected: {acoustic_file}")
+    else:
+        # Fallback to generic name
+        acoustic_file = "acoustic_inventory.xlsx"
+        if os.path.exists(acoustic_file):
+            logger.info(f"Using fallback acoustic file: {acoustic_file}")
+        else:
+            acoustic_file = None
+            logger.warning("No acoustic inventory file found")
+    
+    # Try to find latest music store inventory file
+    music_store_files = glob.glob("music_store_inventory_*.xlsx") + glob.glob("music_store_inventory_*.csv")
+    if music_store_files:
+        music_store_file = max(music_store_files, key=os.path.getctime)
+        logger.info(f"Found {len(music_store_files)} music store files, selected: {music_store_file}")
+    else:
+        # Fallback to generic names
+        music_store_file = "music_store_inventory.xlsx"
+        if not os.path.exists(music_store_file):
+            music_store_file = "music_store_inventory.csv"
+            if not os.path.exists(music_store_file):
+                music_store_file = None
+                logger.warning("No music store inventory file found")
+            else:
+                logger.info(f"Using fallback music store CSV: {music_store_file}")
+        else:
+            logger.info(f"Using fallback music store XLSX: {music_store_file}")
+    
+    return acoustic_file, music_store_file
+
+
 def find_latest_report():
     """Find the most recently generated report file."""
     report_files = glob.glob("FINAL_MATCH_REPORT_*.xlsx")
@@ -239,76 +296,55 @@ def main():
     logger.info("="*60)
     
 
-
     # Step 0: Validation and strict cleanup
     if not validate_environment():
         logger.error("Environment validation failed. Aborting.")
         return False
 
-    # Strict cleanup: delete all inventory and report files
-    # for pattern in ["*inventory*.xlsx", "*report*.xlsx"]:
-    #     for file in glob.glob(pattern):
-    #         try:
-    #             os.remove(file)
-    #             logger.info(f"Deleted old file: {file}")
-    #         except Exception as e:
-    #             logger.warning(f"Could not delete {file}: {e}")
-
-    # Clean old link files
-    # for f in ["subcategory_links.txt", "music-store-all-links.txt", "music-store-product-links.txt"]:
-    #     if os.path.exists(f):
-    #         os.remove(f)
-    #         logger.info(f"Deleted old file: {f}")
-
-    # Generate a single session timestamp
+    # Generate a single session timestamp for report file only
     session_ts = datetime.now().strftime("%Y%m%d_%H%M")
-    acoustic_file = f"acoustic_inventory_{session_ts}.xlsx"
-    musikis_file = f"music_store_inventory_{session_ts}.csv"
     report_file = f"FINAL_MATCH_REPORT_{session_ts}.xlsx"
+
+    # Find most recent inventory files automatically
+    acoustic_file, music_store_file = find_latest_inventory()
+    
+    if not acoustic_file:
+        logger.error("No acoustic inventory file found. Please ensure acoustic_inventory_*.xlsx or acoustic_inventory.xlsx exists.")
+        return False
+    
+    if not music_store_file:
+        logger.error("No music store inventory file found. Please ensure music_store_inventory_*.xlsx/.csv or music_store_inventory.csv exists.")
+        return False
+    
+    logger.info(f"Using acoustic inventory: {acoustic_file}")
+    logger.info(f"Using music store inventory: {music_store_file}")
 
     execution_log = {}
 
-    # print("\n==================== STEP 1: Link Collection ====================", flush=True)
-    # execution_log['get_links'] = run_script("get_links.py")
-    # if not execution_log['get_links']:
-    #     logger.error("Failed to get Acoustic links. Aborting.")
-    #     send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
-    #     return False
-
-    # execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
-    # if not execution_log['musikis_links']:
-    #     logger.error("Failed to get Musikis Saxli links. Aborting.")
-    #     send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
-    #     return False
-
-    # execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
-    # if not execution_log['musikis_all_product_links']:
-    #     logger.error("Failed to get Musikis Saxli product links. Aborting.")
-    #     send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
-    #     return False
-
-    # print("\n==================== STEP 2: Data Extraction ====================", flush=True)
-    # execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
-    # if not execution_log['scraper']:
-    #     logger.error("Acoustic scrape failed. Aborting.")
-    #     send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
-    #     return False
-
-    # execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
-    # if not execution_log['musikis_scraper']:
-    #     logger.error("Musikis Saxli scrape failed. Aborting.")
-    #     send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
-    #     return False
-
     #print("\n==================== STEP 3: Price Comparison ====================", flush=True)
-    # Convert Musikis Saxli CSV to XLSX for comparison
+    # Prepare Musikis Saxli file for comparison (convert CSV to XLSX if needed)
     try:
-        df = pd.read_csv("music_store_inventory.csv", delimiter='\t', encoding='utf-16')
-        df.to_excel(musikis_file.replace('.csv', '.xlsx'), index=False)
-        musikis_xlsx = musikis_file.replace('.csv', '.xlsx')
+        if music_store_file.endswith('.csv'):
+            # Convert CSV to XLSX for comparison
+            logger.info("Converting Music Store CSV to XLSX for comparison...")
+            df = pd.read_csv(music_store_file, delimiter='\t', encoding='utf-16')
+            # Fix column alignment for Music Store data
+            df.columns = df.columns.str.strip()
+            musikis_xlsx = music_store_file.replace('.csv', '.xlsx')
+            df.to_excel(musikis_xlsx, index=False)
+            logger.info(f"Converted to: {musikis_xlsx}")
+        else:
+            # Already XLSX, just use it directly
+            musikis_xlsx = music_store_file
+            # Ensure column alignment
+            logger.info("Preparing Music Store XLSX for comparison...")
+            df = pd.read_excel(musikis_xlsx)
+            df.columns = df.columns.str.strip()
+            df.to_excel(musikis_xlsx, index=False)
+            logger.info(f"Using XLSX: {musikis_xlsx}")
     except Exception as e:
-        logger.error(f"Failed to convert Musikis Saxli CSV to XLSX: {e}")
-        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli CSV to XLSX conversion")
+        logger.error(f"Failed to prepare Musikis Saxli file: {e}")
+        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli file preparation")
         return False
 
     # Run price comparison
@@ -327,42 +363,26 @@ def main():
         return False
 
     print("\n==================== STEP 4: Reporting and Delivery ====================", flush=True)
-    if os.path.exists(report_file):
-        logger.info(f"Found report: {report_file}")
 
+    if os.path.exists(report_file):
+        logger.info("Processing final report...")
         temp_df = pd.read_excel(report_file)
 
-    # 1. ჯერ დავითვალოთ სხვაობა (აქ შეიძლება NaN-ები წარმოიქმნას)
-        temp_df['Price_Diff'] = (temp_df['PRICE_AC'] - temp_df['PRICE_MS']).abs()
+        # Clean column names
+        temp_df.columns = temp_df.columns.str.strip()
 
-        # 2. შევქმნათ მასკა: სადაც ფასი 0-ია ან მარაგში არაა
-        mask = (temp_df['PRICE_AC'] == 0) | (temp_df['PRICE_MS'] == 0) | \
-            (temp_df['PRICE_AC'].isna()) | (temp_df['PRICE_MS'].isna()) | \
-            (temp_df['STATUS_AC'].astype(str).str.contains('Out of Stock', case=False, na=False)) | \
-            (temp_df['STATUS_MS'].astype(str).str.contains('Out of Stock', case=False, na=False))
-        
-        # 3. მხოლოდ სხვაობის სვეტში ჩავწეროთ 0, სადაც მასკა მუშაობს
-        temp_df.loc[mask, 'Price_Diff'] = 0
-
-        # 4. კრიტიკული მომენტი: Google Sheets-ისთვის მხოლოდ სხვაობის სვეტი "გავასუფთაოთ"
-        # ფასებს (PRICE_MS) თავი დაანებე, რომ 0-ებით არ ჩანაცვლდეს რეალური მონაცემი
-        temp_df['Price_Diff'] = temp_df['Price_Diff'].fillna(0)
-        
-        # 5. თუ რომელიმე უჯრა მაინც NaN-ია სხვა სვეტებში, ცარიელ სტრინგად ("") ვაქცევთ 0-ის ნაცვლად
-        # ასე Excel-ში 0-ები არ გამოჩნდება იქ, სადაც მონაცემი უბრალოდ არ გვაქვს
-        temp_df = temp_df.replace([np.nan, np.inf, -np.inf], "") 
-
-        # 6. შენახვა და ატვირთვა
+        # Save and upload - prices are already handled correctly in compare_prices.py
         temp_df.to_excel(report_file, index=False)
         
-        # 5. ატვირთვა
-        sheets_success = upload_to_google_sheets(report_file)
+        # Upload to Google Sheets
+        upload_success = upload_to_google_sheets(report_file)
+        execution_log['upload'] = upload_success
         
-        execution_log['upload'] = sheets_success
-        execution_log['email'] = False
-    else:
-        logger.error("No report files found for delivery")
-        return False
+        if upload_success:
+            logger.info("Successfully uploaded to Google Sheets")
+        else:
+            logger.error("Google Sheets upload failed")
+        
     # Final Summary
     end_time = datetime.now(tz)
     duration = end_time - start_time

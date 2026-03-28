@@ -10,6 +10,17 @@ def clean_id(sku):
         return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(sku)).strip().upper()
 
+def clean_price(price):
+    """Remove currency symbols and convert to numeric value."""
+    if pd.isna(price) or price == '':
+        return None
+    # Remove currency symbols and whitespace
+    price_str = str(price).replace('₾', '').replace('GEL', '').replace('$', '').replace('€', '').strip()
+    try:
+        return float(price_str)
+    except:
+        return None
+
 def compare_prices(acoustic_file, musikis_file, output_file):
     print("--- Starting Price Comparison (Strict ID Matching) ---")
     print(f"[INPUT AUDIT] Loading Acoustic: {acoustic_file}", flush=True)
@@ -42,9 +53,16 @@ def compare_prices(acoustic_file, musikis_file, output_file):
         print("No matching products found between the two stores.", flush=True)
         return
 
-    merged_df['PRICE_AC'] = pd.to_numeric(merged_df['PRICE_AC'], errors='coerce').fillna(0)
-    merged_df['PRICE_MS'] = pd.to_numeric(merged_df['PRICE_MS'], errors='coerce').fillna(0)
-    merged_df['Price_Diff'] = merged_df['PRICE_AC'] - merged_df['PRICE_MS']
+    merged_df['PRICE_AC'] = merged_df['PRICE_AC'].apply(clean_price)
+    # Rename Music Store PRICE column to PRICE_MS for consistency
+    merged_df = merged_df.rename(columns={'PRICE': 'PRICE_MS'})
+    merged_df['PRICE_MS'] = merged_df['PRICE_MS'].apply(clean_price)
+    
+    # Set PRICE_MS to 0 if STATUS_MS is 'Out of Stock'
+    out_of_stock_mask = merged_df['STATUS_MS'].astype(str).str.contains('Out of Stock', case=False, na=False)
+    merged_df.loc[out_of_stock_mask, 'PRICE_MS'] = 0
+    
+    merged_df['Price_Diff'] = (merged_df['PRICE_AC'] - merged_df['PRICE_MS']).abs()
 
     final_report = merged_df[[
         'UNIQUE_ID_AC',
