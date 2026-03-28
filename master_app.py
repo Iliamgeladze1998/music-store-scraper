@@ -169,11 +169,16 @@ def send_email_report(file_path, status="success", error_details=""):
                     filename=os.path.basename(file_path)
                 )
 
-        # Send via SMTP
-        with smtplib.SMTP("smtp.office365.com", 587) as smtp:
-            smtp.starttls()
-            smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
-            smtp.send_message(msg)
+        # Send via SMTP with better authentication
+        try:
+            with smtplib.SMTP("smtp.office365.com", 587) as smtp:
+                smtp.starttls()
+                smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
+                smtp.send_message(msg)
+        except smtplib.SMTPAuthenticationError as auth_error:
+            logger.error(f"SMTP Authentication failed: {auth_error}")
+            logger.error("Please check your email password and ensure 'Less secure app access' is enabled")
+            return False
 
         logger.info(f"Email sent successfully")
         return True
@@ -301,50 +306,78 @@ def main():
         logger.error("Environment validation failed. Aborting.")
         return False
 
-    # Generate a single session timestamp for report file only
+    # Find the most recent files from today's scraping
     session_ts = datetime.now().strftime("%Y%m%d_%H%M")
+    
+    # Find most recent acoustic inventory file
+    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
+    if acoustic_files:
+        acoustic_file = max(acoustic_files, key=os.path.getctime)
+        logger.info(f"Found latest acoustic file: {acoustic_file}")
+    else:
+        acoustic_file = f"acoustic_inventory_{session_ts}.xlsx"
+        logger.info(f"Will create new acoustic file: {acoustic_file}")
+    
+    # Music Store scraper creates generic name, use it directly
+    music_store_file = "music_store_inventory.csv"
+    if os.path.exists(music_store_file):
+        logger.info(f"Using Music Store file: {music_store_file}")
+    else:
+        logger.error(f"Music Store file not found: {music_store_file}")
+        return False
+    
     report_file = f"FINAL_MATCH_REPORT_{session_ts}.xlsx"
 
-    # Find most recent inventory files automatically
-    acoustic_file, music_store_file = find_latest_inventory()
-    
-    if not acoustic_file:
-        logger.error("No acoustic inventory file found. Please ensure acoustic_inventory_*.xlsx or acoustic_inventory.xlsx exists.")
-        return False
-    
-    if not music_store_file:
-        logger.error("No music store inventory file found. Please ensure music_store_inventory_*.xlsx/.csv or music_store_inventory.csv exists.")
-        return False
-    
-    logger.info(f"Using acoustic inventory: {acoustic_file}")
-    logger.info(f"Using music store inventory: {music_store_file}")
+    logger.info(f"Session timestamp: {session_ts}")
+    logger.info(f"Report will be: {report_file}")
 
     execution_log = {}
 
-    #print("\n==================== STEP 3: Price Comparison ====================", flush=True)
-    # Prepare Musikis Saxli file for comparison (convert CSV to XLSX if needed)
+    print("\n==================== STEP 1: Link Collection ====================", flush=True)
+    execution_log['get_links'] = run_script("get_links.py")
+    if not execution_log['get_links']:
+        logger.error("Failed to get Acoustic links. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
+        return False
+
+    execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
+    if not execution_log['musikis_links']:
+        logger.error("Failed to get Musikis Saxli links. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
+        return False
+
+    execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
+    if not execution_log['musikis_all_product_links']:
+        logger.error("Failed to get Musikis Saxli product links. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
+        return False
+
+    print("\n==================== STEP 2: Data Extraction ====================", flush=True)
+    execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
+    if not execution_log['scraper']:
+        logger.error("Acoustic scrape failed. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
+        return False
+
+    execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
+    if not execution_log['musikis_scraper']:
+        logger.error("Musikis Saxli scrape failed. Aborting.")
+        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
+        return False
+
+    print("\n==================== STEP 3: Price Comparison ====================", flush=True)
+    # Convert Musikis Saxli CSV to XLSX for comparison
     try:
-        if music_store_file.endswith('.csv'):
-            # Convert CSV to XLSX for comparison
-            logger.info("Converting Music Store CSV to XLSX for comparison...")
-            df = pd.read_csv(music_store_file, delimiter='\t', encoding='utf-16')
-            # Fix column alignment for Music Store data
-            df.columns = df.columns.str.strip()
-            musikis_xlsx = music_store_file.replace('.csv', '.xlsx')
-            df.to_excel(musikis_xlsx, index=False)
-            logger.info(f"Converted to: {musikis_xlsx}")
-        else:
-            # Already XLSX, just use it directly
-            musikis_xlsx = music_store_file
-            # Ensure column alignment
-            logger.info("Preparing Music Store XLSX for comparison...")
-            df = pd.read_excel(musikis_xlsx)
-            df.columns = df.columns.str.strip()
-            df.to_excel(musikis_xlsx, index=False)
-            logger.info(f"Using XLSX: {musikis_xlsx}")
+        logger.info("Converting Music Store CSV to XLSX for comparison...")
+        df = pd.read_csv(music_store_file, delimiter='\t', encoding='utf-16')
+        # Fix column alignment for Music Store data
+        df.columns = df.columns.str.strip()
+        musikis_xlsx = music_store_file.replace('.csv', '.xlsx')
+        df.to_excel(musikis_xlsx, index=False)
+        logger.info(f"Converted to: {musikis_xlsx}")
     except Exception as e:
-        logger.error(f"Failed to prepare Musikis Saxli file: {e}")
-        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli file preparation")
+        logger.error(f"Failed to convert Musikis Saxli CSV to XLSX: {e}")
+        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli CSV to XLSX conversion")
         return False
 
     # Run price comparison
@@ -380,8 +413,14 @@ def main():
         
         if upload_success:
             logger.info("Successfully uploaded to Google Sheets")
+            # Send success email
+            email_success = send_email_report(report_file, status="success")
+            execution_log['email'] = email_success
         else:
             logger.error("Google Sheets upload failed")
+            # Send failure email
+            send_email_report("", status="failure", error_details="Failed at Step 4: Google Sheets Upload")
+            execution_log['email'] = False
         
     # Final Summary
     end_time = datetime.now(tz)
