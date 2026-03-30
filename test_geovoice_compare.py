@@ -135,7 +135,7 @@ def test_geovoice_comparison():
         for i, row in final_report.head(3).iterrows():
             logger.info(f"ID: {row['UNIQUE_ID']} | GEO: {row['Price_Geovoice']} | AC: {row['Price_Acoustic']} | Diff: {row['Price_Diff']}")
         
-        logger.info("\n✅ Structure standardized. Ready for visual inspection.")
+        logger.info("SUCCESS: Structure standardized. Ready for visual inspection.")
         
         return True
         

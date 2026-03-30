@@ -65,9 +65,9 @@ def upload_to_geovoice_tab(file_path):
         # Try to get Geovoice tab, with safety check
         try:
             worksheet = spreadsheet.worksheet(CONFIG['GEOVOICE_TAB'])
-            logger.info(f"✅ Found existing Geovoice tab: {CONFIG['GEOVOICE_TAB']}")
+            logger.info(f"SUCCESS: Found existing Geovoice tab: {CONFIG['GEOVOICE_TAB']}")
         except gspread.WorksheetNotFound:
-            logger.error(f"❌ Geovoice tab '{CONFIG['GEOVOICE_TAB']}' not found!")
+            logger.error(f"ERROR: Geovoice tab '{CONFIG['GEOVOICE_TAB']}' not found!")
             logger.error("Please create the 'Geovoice' tab manually in Google Sheets first.")
             logger.error("DO NOT proceed - this prevents accidental overwriting of wrong tab.")
             return False
@@ -103,9 +103,9 @@ def upload_to_geovoice_tab(file_path):
         # Remove any active filters
         try:
             worksheet.clear_basic_filter()
-            logger.info("✅ Cleared basic filters on Geovoice tab")
+            logger.info("SUCCESS: Cleared basic filters on Geovoice tab")
         except:
-            logger.info("⚠️  No filters to clear on Geovoice tab")
+            logger.info("INFO: No filters to clear on Geovoice tab")
         
         # Complete formatting reset - remove all background colors, styles, etc.
         try:
@@ -121,9 +121,9 @@ def upload_to_geovoice_tab(file_path):
                 ]
             }
             spreadsheet.batch_update(body)
-            logger.info("✅ Completely reset all formatting on Geovoice tab (colors, styles, etc.)")
+            logger.info("SUCCESS: Completely reset all formatting on Geovoice tab (colors, styles, etc.)")
         except Exception as format_error:
-            logger.info(f"⚠️  Warning: Could not reset all formatting on Geovoice tab: {format_error}")
+            logger.info(f"WARNING: Could not reset all formatting on Geovoice tab: {format_error}")
         
         # Upload fresh data to Geovoice tab
         logger.info("Uploading data to Geovoice tab...")
@@ -133,12 +133,12 @@ def upload_to_geovoice_tab(file_path):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             worksheet.update_acell('K1', f'Last Update: {timestamp}')
-            logger.info(f"✅ Timestamp added to Geovoice tab cell K1: Last Update: {timestamp}")
+            logger.info(f"SUCCESS: Timestamp added to Geovoice tab cell K1: Last Update: {timestamp}")
         except Exception as timestamp_error:
-            logger.info(f"⚠️  Warning: Could not update timestamp on Geovoice tab: {timestamp_error}")
-            logger.info("✅ Data upload to Geovoice tab still successful!")
+            logger.info(f"WARNING: Could not update timestamp on Geovoice tab: {timestamp_error}")
+            logger.info("SUCCESS: Data upload to Geovoice tab still successful!")
         
-        logger.info(f"✅ Geovoice tab updated successfully ({len(df)} rows)")
+        logger.info(f"SUCCESS: Geovoice tab updated successfully ({len(df)} rows)")
         return True
         
     except Exception as e:
@@ -166,25 +166,55 @@ def main():
     
     execution_log = {}
     
-    # Step 1: Use existing acoustic data for testing (skip fresh scrape)
-    print("\n==================== STEP 1: Using Existing Acoustic Data ====================", flush=True)
-    import glob
-    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
-    if acoustic_files:
-        acoustic_file = max(acoustic_files, key=lambda x: x.split('_')[1] + x.split('_')[2].split('.')[0])
-        logger.info(f"Using existing acoustic file: {acoustic_file}")
-        execution_log['acoustic_links'] = True
-        execution_log['acoustic'] = True
-    else:
-        logger.error("No existing acoustic files found!")
+    # Step 1: Always run fresh Acoustic link collection (no caching)
+    print("\n==================== STEP 1: Acoustic Link Collection ====================", flush=True)
+    execution_log['acoustic_links'] = run_script("get_links.py")
+    if not execution_log['acoustic_links']:
+        logger.error("Failed to get Acoustic links. Aborting.")
         return False
     
-    # Step 2-5: Use existing test data for Google Sheets upload testing
-    print("\n==================== STEP 2-5: Using Existing Test Data ====================", flush=True)
-    logger.info("Using existing Geovoice test data for Google Sheets upload testing...")
-    execution_log['geovoice_links'] = True
-    execution_log['geovoice_product_links'] = True
-    execution_log['geovoice'] = True
+    # Step 2: Get Geovoice links
+    print("\n==================== STEP 2: Geovoice Link Collection ====================", flush=True)
+    execution_log['geovoice_links'] = run_script("geovoice-get-links.py")
+    if not execution_log['geovoice_links']:
+        logger.error("Failed to get Geovoice links. Aborting.")
+        return False
+    
+    # Step 3: Get all Geovoice product links
+    print("\n==================== STEP 3: Geovoice Product Link Collection ====================", flush=True)
+    execution_log['geovoice_product_links'] = run_script("geovoice-get-all-product-links.py")
+    if not execution_log['geovoice_product_links']:
+        logger.error("Failed to get Geovoice product links. Aborting.")
+        return False
+    
+    # Step 4: Run acoustic scraper
+    print("\n==================== STEP 4: Acoustic Data Extraction ====================", flush=True)
+    acoustic_cmd = [sys.executable, "scraper.py", "--output_file", acoustic_file]
+    logger.info(f"Executing: {' '.join(acoustic_cmd)}")
+    try:
+        result = subprocess.run(acoustic_cmd, check=True, capture_output=False, text=True, timeout=3600)
+        logger.info(f"SUCCESS: scraper.py completed")
+        execution_log['acoustic'] = True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"ERROR in scraper.py: Exit code {e.returncode}")
+        execution_log['acoustic'] = False
+    except subprocess.TimeoutExpired:
+        logger.error(f"TIMEOUT: scraper.py exceeded 1 hour")
+        execution_log['acoustic'] = False
+    except Exception as e:
+        logger.error(f"FATAL ERROR in scraper.py: {e}")
+        execution_log['acoustic'] = False
+    
+    if not execution_log['acoustic']:
+        logger.error("Acoustic scrape failed. Aborting.")
+        return False
+    
+    # Step 5: Run Geovoice scraper
+    print("\n==================== STEP 5: Geovoice Data Extraction ====================", flush=True)
+    execution_log['geovoice'] = run_script("geovoice_scraper.py")
+    if not execution_log['geovoice']:
+        logger.error("Geovoice scrape failed. Aborting.")
+        return False
     
     # Step 6: Run price comparison with standardized structure
     print("\n==================== STEP 6: Price Comparison ====================", flush=True)
@@ -192,8 +222,7 @@ def main():
         # Use our standardized comparison logic
         logger.info("Running standardized Geovoice price comparison...")
         
-        # Import the comparison logic from our test script
-        import sys
+        # Add current directory to path for imports
         sys.path.append('.')
         
         # Load and run the comparison logic directly
