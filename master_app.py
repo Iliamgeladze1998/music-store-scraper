@@ -244,45 +244,6 @@ def run_script(script_name, max_retries=None):
     return False
 
 
-def find_latest_inventory():
-    """Find the most recent inventory files with fallback logic."""
-    logger.info("Searching for inventory files...")
-    
-    # Try to find latest acoustic inventory file
-    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
-    if acoustic_files:
-        acoustic_file = max(acoustic_files, key=os.path.getctime)
-        logger.info(f"Found {len(acoustic_files)} acoustic files, selected: {acoustic_file}")
-    else:
-        # Fallback to generic name
-        acoustic_file = "acoustic_inventory.xlsx"
-        if os.path.exists(acoustic_file):
-            logger.info(f"Using fallback acoustic file: {acoustic_file}")
-        else:
-            acoustic_file = None
-            logger.warning("No acoustic inventory file found")
-    
-    # Try to find latest music store inventory file
-    music_store_files = glob.glob("music_store_inventory_*.xlsx") + glob.glob("music_store_inventory_*.csv")
-    if music_store_files:
-        music_store_file = max(music_store_files, key=os.path.getctime)
-        logger.info(f"Found {len(music_store_files)} music store files, selected: {music_store_file}")
-    else:
-        # Fallback to generic names
-        music_store_file = "music_store_inventory.xlsx"
-        if not os.path.exists(music_store_file):
-            music_store_file = "music_store_inventory.csv"
-            if not os.path.exists(music_store_file):
-                music_store_file = None
-                logger.warning("No music store inventory file found")
-            else:
-                logger.info(f"Using fallback music store CSV: {music_store_file}")
-        else:
-            logger.info(f"Using fallback music store XLSX: {music_store_file}")
-    
-    return acoustic_file, music_store_file
-
-
 def find_latest_report():
     """Find the most recently generated report file."""
     report_files = glob.glob("FINAL_MATCH_REPORT_*.xlsx")
@@ -292,44 +253,40 @@ def find_latest_report():
 
 
 def main():
-    """Main orchestration function with better error tracking."""
+    """Main orchestration function with fresh execution model."""
     tz = pytz.timezone(CONFIG['TIMEZONE'])
     start_time = datetime.now(tz)
     
     logger.info("="*60)
     logger.info(f"AUTOMATION CYCLE STARTED: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
-    
 
-    # Step 0: Validation and strict cleanup
+    # Step 0: Validation and cleanup
     if not validate_environment():
         logger.error("Environment validation failed. Aborting.")
         return False
 
-    # Find the most recent files from today's scraping
+    # Generate unique session timestamp for this execution
     session_ts = datetime.now().strftime("%Y%m%d_%H%M")
     
-    # Find most recent acoustic inventory file
-    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
-    if acoustic_files:
-        acoustic_file = max(acoustic_files, key=os.path.getctime)
-        logger.info(f"Found latest acoustic file: {acoustic_file}")
-    else:
-        acoustic_file = f"acoustic_inventory_{session_ts}.xlsx"
-        logger.info(f"Will create new acoustic file: {acoustic_file}")
-    
-    # Music Store scraper creates generic name, use it directly
+    # Define files for THIS session only (no fallbacks)
+    acoustic_file = f"acoustic_inventory_{session_ts}.xlsx"
     music_store_file = "music_store_inventory.csv"
-    if os.path.exists(music_store_file):
-        logger.info(f"Using Music Store file: {music_store_file}")
-    else:
-        logger.error(f"Music Store file not found: {music_store_file}")
-        return False
-    
     report_file = f"FINAL_MATCH_REPORT_{session_ts}.xlsx"
 
     logger.info(f"Session timestamp: {session_ts}")
-    logger.info(f"Report will be: {report_file}")
+    logger.info(f"Will create: {acoustic_file}")
+    logger.info(f"Will create: {music_store_file}")
+    logger.info(f"Will create: {report_file}")
+
+    # Clean up old files to ensure fresh run
+    cleanup_old_reports(days=1)
+    
+    # Delete existing music_store_inventory.csv to force fresh data
+    if os.path.exists("music_store_inventory.csv"):
+        logger.info("Removing existing music_store_inventory.csv to force fresh scraping...")
+        os.remove("music_store_inventory.csv")
+        logger.info("Deleted existing music_store_inventory.csv")
 
     execution_log = {}
 

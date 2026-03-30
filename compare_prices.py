@@ -62,7 +62,7 @@ def compare_prices(acoustic_file, musikis_file, output_file):
     out_of_stock_mask = merged_df['STATUS_MS'].astype(str).str.contains('Out of Stock', case=False, na=False)
     merged_df.loc[out_of_stock_mask, 'PRICE_MS'] = 0
     
-    merged_df['Price_Diff'] = merged_df['PRICE_MS'] - merged_df['PRICE_AC']
+    merged_df['Price_Diff'] = (merged_df['PRICE_AC'] - merged_df['PRICE_MS']).abs()
 
     final_report = merged_df[[
         'UNIQUE_ID_AC',
@@ -75,7 +75,7 @@ def compare_prices(acoustic_file, musikis_file, output_file):
         'Price_Diff',
         'LINK_AC',
         'LINK_MS'
-    ]].rename(columns={'UNIQUE_ID_AC': 'UNIQUE_ID'}).sort_values('Price_Diff', ascending=True)
+    ]].rename(columns={'UNIQUE_ID_AC': 'UNIQUE_ID'})
 
     final_report.to_excel(output_file, index=False)
     print(f"\nSUCCESS!", flush=True)
