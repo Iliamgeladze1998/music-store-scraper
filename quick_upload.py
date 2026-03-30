@@ -6,11 +6,37 @@ from datetime import datetime
 import os
 
 def quick_upload_to_google_sheets():
-    """Upload RE_RUN_REPORT_NEW.xlsx to Google Sheets with timestamp."""
+    """Upload the most recent report to Google Sheets with timestamp."""
     
     # Configuration
     spreadsheet_id = "1tDKgxcxPF8Jq151nMb6Wu_ziyOxkFATKSOquFKZrg94"
-    report_file = "RE_RUN_REPORT_NEW.xlsx"
+    
+    # Find the most recent acoustic inventory file
+    import glob
+    acoustic_files = glob.glob("acoustic_inventory_*.xlsx")
+    if acoustic_files:
+        latest_acoustic = max(acoustic_files, key=os.path.getctime)
+        print(f"Found latest acoustic inventory: {latest_acoustic}")
+        
+        # Generate fresh report using latest acoustic data
+        report_file = "RE_RUN_REPORT_FRESH.xlsx"
+        music_store_file = "music_store_inventory.xlsx"
+        
+        # Run price comparison with fresh data
+        import subprocess
+        import sys
+        cmd = [sys.executable, "compare_prices.py",
+               "--acoustic_file", latest_acoustic,
+               "--musikis_file", music_store_file,
+               "--output_file", report_file]
+        
+        print(f"Generating fresh report: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True)
+        
+    else:
+        print("No acoustic inventory files found!")
+        return False
+    
     credentials_file = "credentials.json"
     
     try:
@@ -103,8 +129,8 @@ def quick_upload_to_google_sheets():
         return False
 
 if __name__ == "__main__":
-    print("=== Quick Upload Tool ===")
-    print("This tool uploads RE_RUN_REPORT_NEW.xlsx to Google Sheets")
+    print("=== Quick Upload Tool (Fresh Report Mode) ===")
+    print("This tool finds latest acoustic inventory and generates fresh report before upload")
     print()
     
     success = quick_upload_to_google_sheets()

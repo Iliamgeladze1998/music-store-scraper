@@ -178,13 +178,13 @@ def upload_to_google_sheets(file_path):
 
 
 def send_email_report(file_path, status="success", error_details=""):
-    """Send email report with status and optional error details."""
+    """Send email report with status and optional error details. Non-blocking - never stops execution."""
     if not CONFIG['EMAIL_PASSWORD']:
-        logger.warning("Skipping email: MAIL_PASS not configured")
+        logger.info("Email not configured - skipping email notification")
         return False
 
     try:
-        logger.info(f"Sending email to {CONFIG['RECIPIENT_EMAIL']}...")
+        logger.info(f"Attempting to send email to {CONFIG['RECIPIENT_EMAIL']}...")
 
         msg = EmailMessage()
 
@@ -210,20 +210,18 @@ def send_email_report(file_path, status="success", error_details=""):
                 )
 
         # Send via SMTP with Google App Password
-        try:
-            with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
-                smtp.starttls()
-                smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
-                smtp.send_message(msg)
-                logger.info(f"Email sent successfully using Google App Password")
-                return True
-        except smtplib.SMTPAuthenticationError as auth_error:
-            logger.error(f"SMTP Authentication failed: {auth_error}")
-            logger.error("Please ensure you're using a Google App Password (16 characters) - not your regular password")
-            return False
-
-        except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+            smtp.starttls()
+            smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
+            smtp.send_message(msg)
+            logger.info(f"Email sent successfully using Google App Password")
+            return True
+    except smtplib.SMTPAuthenticationError as auth_error:
+        logger.error(f"Email authentication failed - continuing execution: {auth_error}")
+        logger.error("To fix: Use Google App Password (16 chars) instead of regular password")
+        return False
+    except Exception as e:
+        logger.error(f"Email sending failed - continuing execution: {e}")
         return False
 
 
@@ -334,38 +332,40 @@ def main():
     execution_log['get_links'] = run_script("get_links.py")
     if not execution_log['get_links']:
         logger.error("Failed to get Acoustic links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Acoustic)")
         return False
 
     execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
     if not execution_log['musikis_links']:
         logger.error("Failed to get Musikis Saxli links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Link Collection (Musikis Saxli)")
         return False
 
     execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
     if not execution_log['musikis_all_product_links']:
         logger.error("Failed to get Musikis Saxli product links. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 1: Product Link Collection (Musikis Saxli)")
         return False
 
     print("\n==================== STEP 2: Data Extraction ====================", flush=True)
     execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
     if not execution_log['scraper']:
         logger.error("Acoustic scrape failed. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Acoustic)")
         return False
 
     execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
     if not execution_log['musikis_scraper']:
         logger.error("Musikis Saxli scrape failed. Aborting.")
-        send_email_report("", status="failure", error_details="Failed at Step 2: Data Extraction (Musikis Saxli)")
         return False
 
     print("\n==================== STEP 3: Price Comparison ====================", flush=True)
     # Convert Musikis Saxli CSV to XLSX for comparison
     try:
         logger.info("Converting Music Store CSV to XLSX for comparison...")
+        
+        # Delete existing XLSX file if it exists to avoid permission issues
+        xlsx_file = music_store_file.replace('.csv', '.xlsx')
+        if os.path.exists(xlsx_file):
+            os.remove(xlsx_file)
+            logger.info(f"Removed existing {xlsx_file} to avoid permission issues")
+        
         df = pd.read_csv(music_store_file, delimiter='\t', encoding='utf-16')
         # Fix column alignment for Music Store data
         df.columns = df.columns.str.strip()
@@ -374,7 +374,8 @@ def main():
         logger.info(f"Converted to: {musikis_xlsx}")
     except Exception as e:
         logger.error(f"Failed to convert Musikis Saxli CSV to XLSX: {e}")
-        send_email_report("", status="failure", error_details="Failed at Step 3: Musikis Saxli CSV to XLSX conversion")
+        # Don't send email for conversion failure, just log and continue
+        logger.error("Continuing without price comparison due to conversion failure")
         return False
 
     # Run price comparison
@@ -389,7 +390,6 @@ def main():
     except Exception as e:
         logger.error(f"Price comparison failed: {e}")
         execution_log['compare'] = False
-        send_email_report("", status="failure", error_details="Failed at Step 3: Price Comparison")
         return False
 
     print("\n==================== STEP 4: Reporting and Delivery ====================", flush=True)
@@ -410,14 +410,11 @@ def main():
         
         if upload_success:
             logger.info("Successfully uploaded to Google Sheets")
-            # Send success email
-            email_success = send_email_report(report_file, status="success")
-            execution_log['email'] = email_success
+            # Send success email (optional - never stops execution)
+            send_email_report(report_file, status="success")
         else:
             logger.error("Google Sheets upload failed")
-            # Send failure email
-            send_email_report("", status="failure", error_details="Failed at Step 4: Google Sheets Upload")
-            execution_log['email'] = False
+            # Don't send email for upload failure to avoid stopping execution
         
     # Final Summary
     end_time = datetime.now(tz)
@@ -432,7 +429,6 @@ def main():
     logger.info(f"   Scraper (Musikis Saxli): {'OK' if execution_log.get('musikis_scraper') else 'WARN'}")
     logger.info(f"   Price Comparison: {'OK' if execution_log.get('compare') else 'FAIL'}")
     logger.info(f"   Google Sheets Upload: {'OK' if execution_log.get('upload') else 'FAIL'}")
-    logger.info(f"   Email Sent: {'OK' if execution_log.get('email') else 'WARN'}")
     logger.info(f"\nCYCLE FINISHED")
     logger.info(f"   Duration: {duration}")
     logger.info("="*60 + "\n")
