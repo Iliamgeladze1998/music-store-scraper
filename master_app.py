@@ -126,16 +126,51 @@ def upload_to_google_sheets(file_path):
                     row_data.append(value)
             data_to_upload.append(row_data)
         
-        # Upload data
-        sheet.clear()
+        # Reset Google Sheets formatting and clear all data
+        logger.info("Resetting Google Sheets (clearing formatting, filters, and data)...")
+        
+        # Clear all formatting, filters, and data from a wide range
+        sheet.batch_clear(["A1:Z2000"])
+        
+        # Remove any active filters
+        try:
+            sheet.clear_basic_filter()
+            logger.info("✅ Cleared basic filters")
+        except:
+            logger.info("⚠️  No filters to clear")
+        
+        # Complete formatting reset - remove all background colors, styles, etc.
+        try:
+            sheet_id = sheet._properties['sheetId']
+            body = {
+                "requests": [
+                    {
+                        "updateCells": {
+                            "range": {"sheetId": sheet_id},
+                            "fields": "userEnteredFormat"
+                        }
+                    }
+                ]
+            }
+            sheet.spreadsheet.batch_update(body)
+            logger.info("✅ Completely reset all formatting (colors, styles, etc.)")
+        except Exception as format_error:
+            logger.info(f"⚠️  Warning: Could not reset all formatting: {format_error}")
+        
+        # Upload data to Google Sheets starting from A1
+        logger.info("Uploading data to Google Sheets...")
         sheet.update(data_to_upload)
         
-        # Add "Last Update" timestamp to cell L1
+        # Add timestamp to cell K1 (more visible than L1)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet.update('L1', f'Last Update: {timestamp}')
+        try:
+            sheet.update_acell('K1', f'Last Update: {timestamp}')
+            logger.info(f"Last Update timestamp added to cell K1: {timestamp}")
+        except Exception as timestamp_error:
+            logger.info(f"⚠️  Warning: Could not update timestamp: {timestamp_error}")
+            logger.info("✅ Data upload still successful!")
         
         logger.info(f"Google Sheet updated successfully ({len(df)} rows)")
-        logger.info(f"Last Update timestamp added to cell L1: {timestamp}")
         return True
     except Exception as e:
         logger.error(f"Failed to update Google Sheet: {e}")
@@ -174,20 +209,20 @@ def send_email_report(file_path, status="success", error_details=""):
                     filename=os.path.basename(file_path)
                 )
 
-        # Send via SMTP with better authentication
+        # Send via SMTP with Google App Password
         try:
-            with smtplib.SMTP("smtp.office365.com", 587) as smtp:
+            with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
                 smtp.starttls()
                 smtp.login(CONFIG['SENDER_EMAIL'], CONFIG['EMAIL_PASSWORD'])
                 smtp.send_message(msg)
+                logger.info(f"Email sent successfully using Google App Password")
+                return True
         except smtplib.SMTPAuthenticationError as auth_error:
             logger.error(f"SMTP Authentication failed: {auth_error}")
-            logger.error("Please check your email password and ensure 'Less secure app access' is enabled")
+            logger.error("Please ensure you're using a Google App Password (16 characters) - not your regular password")
             return False
 
-        logger.info(f"Email sent successfully")
-        return True
-    except Exception as e:
+        except Exception as e:
         logger.error(f"Failed to send email: {e}")
         return False
 
