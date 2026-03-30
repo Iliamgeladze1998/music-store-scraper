@@ -130,7 +130,12 @@ def upload_to_google_sheets(file_path):
         sheet.clear()
         sheet.update(data_to_upload)
         
+        # Add "Last Update" timestamp to cell L1
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet.update('L1', f'Last Update: {timestamp}')
+        
         logger.info(f"Google Sheet updated successfully ({len(df)} rows)")
+        logger.info(f"Last Update timestamp added to cell L1: {timestamp}")
         return True
     except Exception as e:
         logger.error(f"Failed to update Google Sheet: {e}")
