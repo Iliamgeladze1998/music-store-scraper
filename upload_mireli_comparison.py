@@ -4,6 +4,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 from datetime import datetime
 import logging
+import sys
+import io
+
+# Fix UTF-8 encoding for Windows terminal
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -163,6 +168,6 @@ if __name__ == "__main__":
     
     success = upload_to_google_sheets(args.comparison_file, args.sheet_name)
     if success:
-        print("✅ Upload completed successfully")
+        print("SUCCESS: Upload completed successfully")
     else:
-        print("❌ Upload failed")
+        print("ERROR: Upload failed")
