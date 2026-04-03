@@ -168,41 +168,41 @@ def main():
     
     # Step 1: Always run fresh Acoustic link collection (no caching)
     print("\n==================== STEP 1: Acoustic Link Collection ====================", flush=True)
-    execution_log['acoustic_links'] = run_script("get_links.py")
+    execution_log['acoustic_links'] = run_script("store_acoustic_links.py")
     if not execution_log['acoustic_links']:
         logger.error("Failed to get Acoustic links. Aborting.")
         return False
     
     # Step 2: Get Geovoice links
     print("\n==================== STEP 2: Geovoice Link Collection ====================", flush=True)
-    execution_log['geovoice_links'] = run_script("geovoice-get-links.py")
+    execution_log['geovoice_links'] = run_script("store_geovoice_links.py")
     if not execution_log['geovoice_links']:
         logger.error("Failed to get Geovoice links. Aborting.")
         return False
     
     # Step 3: Get all Geovoice product links
     print("\n==================== STEP 3: Geovoice Product Link Collection ====================", flush=True)
-    execution_log['geovoice_product_links'] = run_script("geovoice-get-all-product-links.py")
+    execution_log['geovoice_product_links'] = run_script("store_geovoice_all_links.py")
     if not execution_log['geovoice_product_links']:
         logger.error("Failed to get Geovoice product links. Aborting.")
         return False
     
     # Step 4: Run acoustic scraper
     print("\n==================== STEP 4: Acoustic Data Extraction ====================", flush=True)
-    acoustic_cmd = [sys.executable, "scraper.py", "--output_file", acoustic_file]
+    acoustic_cmd = [sys.executable, "store_acoustic_scraper.py", "--output_file", acoustic_file]
     logger.info(f"Executing: {' '.join(acoustic_cmd)}")
     try:
         result = subprocess.run(acoustic_cmd, check=True, capture_output=False, text=True, timeout=3600)
-        logger.info(f"SUCCESS: scraper.py completed")
+        logger.info(f"SUCCESS: store_acoustic_scraper.py completed")
         execution_log['acoustic'] = True
     except subprocess.CalledProcessError as e:
-        logger.error(f"ERROR in scraper.py: Exit code {e.returncode}")
+        logger.error(f"ERROR in store_acoustic_scraper.py: Exit code {e.returncode}")
         execution_log['acoustic'] = False
     except subprocess.TimeoutExpired:
-        logger.error(f"TIMEOUT: scraper.py exceeded 1 hour")
+        logger.error(f"TIMEOUT: store_acoustic_scraper.py exceeded 1 hour")
         execution_log['acoustic'] = False
     except Exception as e:
-        logger.error(f"FATAL ERROR in scraper.py: {e}")
+        logger.error(f"FATAL ERROR in store_acoustic_scraper.py: {e}")
         execution_log['acoustic'] = False
     
     if not execution_log['acoustic']:
@@ -211,7 +211,7 @@ def main():
     
     # Step 5: Run Geovoice scraper
     print("\n==================== STEP 5: Geovoice Data Extraction ====================", flush=True)
-    execution_log['geovoice'] = run_script("geovoice_scraper.py")
+    execution_log['geovoice'] = run_script("store_geovoice_scraper.py")
     if not execution_log['geovoice']:
         logger.error("Geovoice scrape failed. Aborting.")
         return False

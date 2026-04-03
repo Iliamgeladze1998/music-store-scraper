@@ -329,28 +329,28 @@ def main():
     execution_log = {}
 
     print("\n==================== STEP 1: Link Collection ====================", flush=True)
-    execution_log['get_links'] = run_script("get_links.py")
+    execution_log['get_links'] = run_script("store_acoustic_links.py")
     if not execution_log['get_links']:
         logger.error("Failed to get Acoustic links. Aborting.")
         return False
 
-    execution_log['musikis_links'] = run_script("musikis-saxli-get-links.py")
+    execution_log['musikis_links'] = run_script("store_musikis_links.py")
     if not execution_log['musikis_links']:
         logger.error("Failed to get Musikis Saxli links. Aborting.")
         return False
 
-    execution_log['musikis_all_product_links'] = run_script("musikis-saxli-get-all-product-links.py")
+    execution_log['musikis_all_product_links'] = run_script("store_musikis_all_links.py")
     if not execution_log['musikis_all_product_links']:
         logger.error("Failed to get Musikis Saxli product links. Aborting.")
         return False
 
     print("\n==================== STEP 2: Data Extraction ====================", flush=True)
-    execution_log['scraper'] = run_script(f"scraper.py --output_file {acoustic_file}", max_retries=1)
+    execution_log['scraper'] = run_script(f"store_acoustic_scraper.py --output_file {acoustic_file}", max_retries=1)
     if not execution_log['scraper']:
         logger.error("Acoustic scrape failed. Aborting.")
         return False
 
-    execution_log['musikis_scraper'] = run_script("musikis-saxli-scraper.py", max_retries=1)
+    execution_log['musikis_scraper'] = run_script("store_musikis_scraper.py", max_retries=1)
     if not execution_log['musikis_scraper']:
         logger.error("Musikis Saxli scrape failed. Aborting.")
         return False

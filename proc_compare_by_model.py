@@ -8,6 +8,16 @@ import logging
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# Store-Agnostic Configuration
+BASE_STORE = "acoustic"  # Can be changed to "musicroom", "mireli", etc.
+TARGET_STORE = "mireli"  # Store to compare against base
+BASE_STORE_FILE = f"{BASE_STORE}_inventory.xlsx"  # Base store inventory file
+TARGET_STORE_FILE = f"{TARGET_STORE}_inventory.csv"  # Target store inventory file
+
+# Ensure exports folder exists
+os.makedirs("exports", exist_ok=True)
+os.makedirs("archives", exist_ok=True)
+
 # Senior-Level Strict Matching Architecture with Simple "NO" Feedback System - FINAL PRODUCTION VERSION
 CONFIDENCE_FILE = 'match_history.json'
 BLACKLIST_FILE = 'match_blacklist.json'
@@ -17,8 +27,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # 1. The 'No-Flute' Filter - Category Blacklists
-ACOUSTIC_CATEGORY_BLACKLIST = ['RECORDER', 'MICROPHONE', 'STAND', 'INTERFACE', 'CABLE', 'ADAPTER', 'CASE', 'BAG', 'GIG BAG']
-MIRELI_CATEGORY_BLACKLIST = ['PIANO', 'SYNTHESIZER', 'KEYBOARD', 'DIGITAL PIANO', 'STAGE PIANO']
+BASE_CATEGORY_BLACKLIST = ['RECORDER', 'MICROPHONE', 'STAND', 'INTERFACE', 'CABLE', 'ADAPTER', 'CASE', 'BAG', 'GIG BAG']
+TARGET_CATEGORY_BLACKLIST = ['PIANO', 'SYNTHESIZER', 'KEYBOARD', 'DIGITAL PIANO', 'STAGE PIANO']
 
 def load_match_history():
     """Load match history from JSON file"""
@@ -50,23 +60,23 @@ def save_blacklist(blacklist):
     with open(BLACKLIST_FILE, 'w', encoding='utf-8') as f:
         json.dump(blacklist, f, indent=2, ensure_ascii=False)
 
-def is_blacklisted(acoustic_id, mireli_name):
+def is_blacklisted(base_id, target_name):
     """Check if a match is blacklisted"""
     blacklist = load_blacklist()
-    key = f"{acoustic_id}_{mireli_name}"
+    key = f"{base_id}_{target_name}"
     return key in blacklist
 
-def add_to_blacklist(acoustic_id, mireli_name):
+def add_to_blacklist(base_id, target_name):
     """Add pair to blacklist"""
     blacklist = load_blacklist()
-    key = f"{acoustic_id}_{mireli_name}"
+    key = f"{base_id}_{target_name}"
     blacklist[key] = {
-        'acoustic_id': acoustic_id,
-        'mireli_name': mireli_name,
+        'base_id': base_id,
+        'target_name': target_name,
         'blacklisted_at': datetime.now().isoformat()
     }
     save_blacklist(blacklist)
-    logger.info(f"Added to blacklist: {acoustic_id} -> {mireli_name}")
+    logger.info(f"Added to blacklist: {base_id} -> {target_name}")
 
 def contains_category_blacklist(name, blacklist):
     """Check if product name contains category blacklist keywords"""
@@ -79,42 +89,42 @@ def contains_category_blacklist(name, blacklist):
             return True
     return False
 
-def passes_no_flute_filter(acoustic_name, mireli_name):
+def passes_no_flute_filter(base_name, target_name):
     """1. The 'No-Flute' Filter - Category Cross-Contamination Prevention"""
-    # Check if Acoustic contains forbidden categories
-    if contains_category_blacklist(acoustic_name, ACOUSTIC_CATEGORY_BLACKLIST):
-        # If Acoustic is in blacklist categories, Mireli must NOT be in instrument categories
-        if contains_category_blacklist(mireli_name, MIRELI_CATEGORY_BLACKLIST):
+    # Check if Base store contains forbidden categories
+    if contains_category_blacklist(base_name, BASE_CATEGORY_BLACKLIST):
+        # If Base store is in blacklist categories, Target must NOT be in instrument categories
+        if contains_category_blacklist(target_name, TARGET_CATEGORY_BLACKLIST):
             return False  # CROSS-CONTAMINATION: Mic vs Piano, etc.
     
-    # Check if Mireli contains forbidden categories  
-    if contains_category_blacklist(mireli_name, MIRELI_CATEGORY_BLACKLIST):
-        # If Mireli is in instrument categories, Acoustic must NOT be in accessory categories
-        if contains_category_blacklist(acoustic_name, ACOUSTIC_CATEGORY_BLACKLIST):
+    # Check if Target contains forbidden categories  
+    if contains_category_blacklist(target_name, TARGET_CATEGORY_BLACKLIST):
+        # If Target is in instrument categories, Base must NOT be in accessory categories
+        if contains_category_blacklist(base_name, BASE_CATEGORY_BLACKLIST):
             return False  # CROSS-CONTAMINATION: Piano vs Mic, etc.
     
     return True  # Passes filter
 
-def strict_numeric_handshake(acoustic_model, mireli_name, acoustic_brand, mireli_brand):
+def strict_numeric_handshake(base_model, target_name, base_brand, target_brand):
     """2. Strict Numeric Handshake - Brand-Gated Model Matching"""
     # Brand must match - NO EXCEPTIONS
-    if acoustic_brand != mireli_brand:
+    if base_brand != target_brand:
         return False, "BRAND_MISMATCH"
     
-    # Extract numeric part from acoustic model
-    if not acoustic_model:
+    # Extract numeric part from base model
+    if not base_model:
         return False, "NO_MODEL"
     
-    acoustic_numeric = re.search(r'(\d+)', acoustic_model)
-    if not acoustic_numeric:
+    base_numeric = re.search(r'(\d+)', base_model)
+    if not base_numeric:
         return False, "NO_NUMERIC"
     
-    acoustic_num = acoustic_numeric.group(1)
+    base_num = base_numeric.group(1)
     
-    # Check if acoustic numeric is found in mireli name
-    mireli_clean = re.sub(r'[^A-Z0-9]', '', str(mireli_name).upper())
+    # Check if base numeric is found in target name
+    target_clean = re.sub(r'[^A-Z0-9]', '', str(target_name).upper())
     
-    if acoustic_num in mireli_clean:
+    if base_num in target_clean:
         return True, "NUMERIC_MATCH"
     else:
         return False, "NO_NUMERIC_MATCH"
@@ -226,7 +236,7 @@ def scrape_fresh_acoustic():
         
         # Step 2: Run get_links.py first
         logger.info("🔗 Step 1: Getting fresh Acoustic links...")
-        cmd_get_links = f"cmd /c chcp 65001 > nul && {sys.executable} get_links.py"
+        cmd_get_links = f"cmd /c chcp 65001 > nul && {sys.executable} store_acoustic_links.py"
         
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
@@ -252,12 +262,12 @@ def scrape_fresh_acoustic():
         
         # Step 3: Run scraper.py with dynamic filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        acoustic_filename = f"acoustic_inventory_mireli_sync_{timestamp}.xlsx"
+        acoustic_filename = f"exports/acoustic_inventory_mireli_sync_{timestamp}.xlsx"
         
         logger.info(f"📄 Step 2: Scraping Acoustic data...")
         logger.info(f"📁 Target output file: {acoustic_filename}")
         
-        cmd_scraper = f"cmd /c chcp 65001 > nul && {sys.executable} scraper.py --output_file {acoustic_filename}"
+        cmd_scraper = f"cmd /c chcp 65001 > nul && {sys.executable} store_acoustic_scraper.py --output_file {acoustic_filename}"
         
         logger.info(f"� Executing: {cmd_scraper}")
         result_scraper = subprocess.run(
@@ -300,7 +310,7 @@ def scrape_fresh_mireli():
         
         # Step 1: Run mireli_pages.py first
         logger.info("🔗 Step 1: Getting fresh Mireli pagination links...")
-        cmd_mireli_pages = f"cmd /c chcp 65001 > nul && {sys.executable} mireli_pages.py"
+        cmd_mireli_pages = f"cmd /c chcp 65001 > nul && {sys.executable} store_mireli_pages.py"
         
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
@@ -327,7 +337,7 @@ def scrape_fresh_mireli():
         # Step 2: Run mireli_scraper.py
         logger.info(f"📄 Step 2: Scraping Mireli data...")
         
-        cmd_mireli_scraper = f"cmd /c chcp 65001 > nul && {sys.executable} mireli_scraper.py"
+        cmd_mireli_scraper = f"cmd /c chcp 65001 > nul && {sys.executable} store_mireli_scraper.py"
         
         logger.info(f"� Executing: {cmd_mireli_scraper}")
         result_mireli_scraper = subprocess.run(
@@ -344,7 +354,7 @@ def scrape_fresh_mireli():
         if result_mireli_scraper.returncode == 0:
             # Generate timestamped filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            mireli_filename = f"mireli_inventory_{timestamp}.csv"
+            mireli_filename = f"exports/mireli_inventory_{timestamp}.csv"
             
             # Rename the output file to our timestamped version
             try:
@@ -521,7 +531,7 @@ def senior_strict_matching_production():
 
         # Save to file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        output_file = f"keyboard_comparison_{timestamp}.xlsx"
+        output_file = f"exports/keyboard_comparison_{timestamp}.xlsx"
         result_df.to_excel(output_file, index=False)
         
         logger.info(f"✅ Phase 3 SUCCESS: Senior strict comparison saved to: {output_file}")

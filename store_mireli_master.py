@@ -14,7 +14,7 @@ def run_fresh_comparison():
     
     try:
         # Build command
-        cmd = [sys.executable, "run_fresh_both_first.py", "--mode", "match"]
+        cmd = [sys.executable, "proc_compare_by_model.py", "--mode", "match"]
         
         # Run subprocess
         print(f"Executing: {' '.join(cmd)}")
@@ -46,7 +46,7 @@ def find_latest_comparison_file():
     
     try:
         # Search for files matching the pattern
-        pattern = "keyboard_comparison_*.xlsx"
+        pattern = "exports/keyboard_comparison_*.xlsx"
         files = glob.glob(pattern)
         
         if not files:

@@ -2,13 +2,19 @@ import subprocess
 import sys
 import logging
 from datetime import datetime
+import os
+
+# Store-Agnostic Configuration
+BASE_STORE = "acoustic"  # Can be changed to "musicroom", "mireli", etc.
+BASE_STORE_FILE = f"{BASE_STORE}_inventory.xlsx"  # Base store inventory file
+COMPARISON_STORES = ["music_store", "geovoice"]  # Stores to compare against base
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("run_all_comparisons.log"),
+        logging.FileHandler("logs/proc_compare_by_id.log"),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -42,45 +48,44 @@ def run_script(script_name, description):
         return False
 
 def main():
-    """Main execution for running both Music Store and Geovoice comparisons."""
+    """Main execution for running ID-based comparisons against base store."""
     
     logger.info("\n" + "="*80)
-    logger.info("UNIFIED PRICE COMPARISON RUNNER")
-    logger.info("Running Both Music Store & Geovoice Comparisons")
+    logger.info("ID-BASED PRICE COMPARISON RUNNER")
+    logger.info(f"Base Store: {BASE_STORE.upper()}")
+    logger.info(f"Comparison Stores: {', '.join([s.upper() for s in COMPARISON_STORES])}")
     logger.info(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*80)
     
     results = {}
     
-    # Step 1: Music Store Comparison
-    logger.info("\nMusic Store Comparison ====================")
-    results['music_store'] = run_script("master_app.py", "Music Store Comparison Workflow")
-    
-    if results['music_store']:
-        logger.info("Music Store comparison completed successfully!")
-    else:
-        logger.error("Music Store comparison failed!")
-    
-    # Step 2: Geovoice Comparison  
-    logger.info("\nGeovoice Comparison ====================")
-    results['geovoice'] = run_script("master_geovoice.py", "Geovoice Comparison Workflow")
-    
-    if results['geovoice']:
-        logger.info("Geovoice comparison completed successfully!")
-    else:
-        logger.error("Geovoice comparison failed!")
+    # Run comparisons for each store
+    for store in COMPARISON_STORES:
+        logger.info(f"\n{store.upper()} Comparison ====================")
+        script_name = f"store_{store}_master.py"
+        description = f"{store.title()} Comparison Workflow"
+        
+        results[store] = run_script(script_name, description)
+        
+        if results[store]:
+            logger.info(f"{store.title()} comparison completed successfully!")
+        else:
+            logger.error(f"{store.title()} comparison failed!")
     
     # Final Summary
     logger.info("\n" + "="*80)
     logger.info("FINAL EXECUTION SUMMARY:")
-    logger.info(f"   Music Store (Musikis-saxli): {'SUCCESS' if results['music_store'] else 'FAILED'}")
-    logger.info(f"   Geovoice: {'SUCCESS' if results['geovoice'] else 'FAILED'}")
     
-    overall_success = results['music_store'] and results['geovoice']
+    for store in COMPARISON_STORES:
+        status = 'SUCCESS' if results[store] else 'FAILED'
+        store_name = store.replace('_', ' ').title()
+        logger.info(f"   {store_name}: {status}")
+    
+    overall_success = all(results.values())
     
     if overall_success:
         logger.info("\nOVERALL RESULT: ALL COMPARISONS COMPLETED SUCCESSFULLY!")
-        logger.info("Both 'Musikis-saxli' and 'Geovoice' tabs have been updated in Google Sheets")
+        logger.info(f"All comparison tabs have been updated in Google Sheets")
     else:
         logger.info("\nOVERALL RESULT: SOME COMPARISONS FAILED")
         logger.info("Please check the logs above for details")

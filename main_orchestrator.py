@@ -60,7 +60,7 @@ def main():
     print("-"*60)
     
     phase1_success = run_script_realtime(
-        "run_all_comparisons.py", 
+        "proc_compare_by_id.py", 
         "Music Store & Geovoice Comparisons"
     )
     
@@ -71,7 +71,7 @@ def main():
     print("-"*60)
     
     phase2_success = run_script_realtime(
-        "master_mireli.py", 
+        "store_mireli_master.py", 
         "Mireli Comparison"
     )
     
@@ -93,9 +93,9 @@ def main():
         print("✗ Phase 2 (Mireli): Issues detected")
     
     print("\nGoogle Sheets targeted:")
-    print("- Acoustic tab (via run_all_comparisons.py)")
-    print("- Midi tab (via run_all_comparisons.py)")
-    print("- Mireli tab (via master_mireli.py)")
+    print("- Acoustic tab (via proc_compare_by_id.py)")
+    print("- Midi tab (via proc_compare_by_id.py)")
+    print("- Mireli tab (via store_mireli_master.py)")
     print("="*80)
     
     # Always exit with 0 - orchestrator completed its job
