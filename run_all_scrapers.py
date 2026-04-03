@@ -6,8 +6,8 @@ from datetime import datetime
 # Fix UTF-8 encoding for Windows terminal
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-def run_script_silent(script_name, description):
-    """Run a script in autonomous mode with error resilience"""
+def run_script_realtime(script_name, description):
+    """Run a script and show real-time output without capturing"""
     print(f"\n{'='*60}")
     print(f"STARTING: {description}")
     print(f"Script: {script_name}")
@@ -15,101 +15,90 @@ def run_script_silent(script_name, description):
     print(f"{'='*60}")
     
     try:
-        # Run the script with subprocess
+        # Run the script with real-time output (no capture)
         cmd = [sys.executable, script_name]
         print(f"Executing: {' '.join(cmd)}")
+        print("-" * 40)
         
         result = subprocess.run(
             cmd,
             cwd=sys.path[0],  # Current directory
-            capture_output=True,
             text=True,
             encoding='utf-8'
+            # NO capture_output=True - shows real-time output
         )
         
-        # Print output regardless of success/failure
-        if result.stdout:
-            print("STDOUT:")
-            print(result.stdout)
+        print("-" * 40)
         
-        if result.stderr:
-            print("STDERR:")
-            print(result.stderr)
-        
-        # Check result
+        # Check result but don't stop execution
         if result.returncode == 0:
-            print(f"\nSUCCESS: {description} completed successfully")
+            print(f"SUCCESS: {description} completed (exit code 0)")
             return True
         else:
-            print(f"\nERROR: {description} failed with exit code {result.returncode}")
+            print(f"WARNING: {description} finished with exit code {result.returncode}")
+            print("Continuing to next phase...")
             return False
             
     except Exception as e:
-        print(f"\nCRITICAL ERROR: Failed to run {script_name}")
+        print(f"CRITICAL ERROR: Failed to run {script_name}")
         print(f"Exception: {str(e)}")
+        print("Continuing to next phase...")
         return False
 
 def main():
-    """Main orchestration function - runs all scrapers autonomously"""
+    """Simple orchestrator - runs scripts sequentially with real-time output"""
     print("\n" + "="*80)
-    print("AUTONOMOUS SCRAPER ORCHESTRATION")
-    print("This script will run all scrapers without user input")
-    print("Target Google Sheets: Acoustic, Midi, Mireli")
+    print("SIMPLE SCRAPER ORCHESTRATOR")
+    print("Real-time output mode - showing script progress as it happens")
     print("="*80)
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # Track overall success
-    results = {}
-    
-    # Step 1: Run Music Store & Geovoice comparisons
+    # Phase 1: Music Store & Geovoice
     print("\n" + "-"*60)
     print("PHASE 1: Music Store & Geovoice Comparisons")
+    print("This will update Acoustic and Midi Google Sheet tabs")
     print("-"*60)
     
-    results['run_all_comparisons'] = run_script_silent(
+    phase1_success = run_script_realtime(
         "run_all_comparisons.py", 
-        "Music Store & Geovoice Comparisons (Acoustic + Midi tabs)"
+        "Music Store & Geovoice Comparisons"
     )
     
-    # Step 2: Run Mireli comparison
+    # Phase 2: Mireli
     print("\n" + "-"*60)
     print("PHASE 2: Mireli Comparison")
+    print("This will update Mireli Google Sheet tab")
     print("-"*60)
     
-    results['master_mireli'] = run_script_silent(
+    phase2_success = run_script_realtime(
         "master_mireli.py", 
-        "Mireli Comparison (Mireli tab)"
+        "Mireli Comparison"
     )
     
     # Final summary
     print("\n" + "="*80)
-    print("AUTONOMOUS SCRAPER ORCHESTRATION COMPLETE")
+    print("ORCHESTRATION COMPLETE")
     print("="*80)
-    print(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("\nSUMMARY:")
+    print(f"Finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    if results['run_all_comparisons']:
-        print("✓ Music Store & Geovoice: SUCCESS")
+    print("\nPHASE SUMMARY:")
+    if phase1_success:
+        print("✓ Phase 1 (Music Store & Geovoice): SUCCESS")
     else:
-        print("✗ Music Store & Geovoice: FAILED")
+        print("✗ Phase 1 (Music Store & Geovoice): Issues detected")
     
-    if results['master_mireli']:
-        print("✓ Mireli: SUCCESS")
+    if phase2_success:
+        print("✓ Phase 2 (Mireli): SUCCESS")
     else:
-        print("✗ Mireli: FAILED")
+        print("✗ Phase 2 (Mireli): Issues detected")
     
-    success_count = sum(results.values())
-    total_count = len(results)
-    
-    print(f"\nOverall: {success_count}/{total_count} scripts completed successfully")
-    print("Google Sheets targeted:")
+    print("\nGoogle Sheets targeted:")
     print("- Acoustic tab (via run_all_comparisons.py)")
-    print("- Midi tab (via run_all_comparisons.py)")  
+    print("- Midi tab (via run_all_comparisons.py)")
     print("- Mireli tab (via master_mireli.py)")
     print("="*80)
     
-    # Always exit with 0 since we want to indicate orchestration completed
-    # Individual script failures are logged above
+    # Always exit with 0 - orchestrator completed its job
     sys.exit(0)
 
 if __name__ == "__main__":
